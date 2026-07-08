@@ -1,0 +1,23 @@
+Starboard Protocol — reference implementation
+Copyright (C) 2026 James H. All rights reserved.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+
+The full text of the AGPL-3.0 license should accompany this program in a file
+named LICENSE.AGPL. If not, see <https://www.gnu.org/licenses/agpl-3.0.txt>.
+
+-------------------------------------------------------------------------------
+DUAL LICENSING
+
+A commercial license that waives the AGPL copyleft obligations is available for
+proprietary flight and ground software. See COMMERCIAL-LICENSE.md.
+
+The specification text under docs/ is licensed separately under CC BY 4.0.
+-------------------------------------------------------------------------------
