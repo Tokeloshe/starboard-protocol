@@ -75,13 +75,17 @@ struct Conjunction {
 // (SPEC §4.2). Symmetric under swap: screen(A,B) and screen(B,A) agree on
 // t_ca and miss_distance bit-for-bit (the miss vector flips sign).
 //
-// Semantics (normative):
-//  * t_raw <= 0        : the pair is at/past closest approach. t_ca := 0 and
-//                        the pair is detected iff it is still inside R_SCREEN
-//                        ("inside the bubble" — receding but not yet clear).
-//  * t_raw >  horizon  : closest approach is beyond the window. NOT detected
-//                        (the earlier draft clamped and mis-detected here).
-//  * otherwise         : detected iff miss_distance < r_screen.
+// Semantics (normative). Let t_raw be the unconstrained closest-approach
+// time. Two regimes:
+//  * t_raw inside (0, horizon]: the encounter is AT the closest approach —
+//    t_ca := t_raw, miss evaluated there, detected iff miss < R_SCREEN.
+//  * t_raw <= 0 OR t_raw > horizon: the closest approach is not reachable
+//    inside the window, so the encounter is WHERE YOU ARE NOW — t_ca := 0,
+//    miss := current separation, detected iff currently inside R_SCREEN
+//    ("inside the bubble"). This covers both the receding pair that has not
+//    yet cleared the bubble AND the slowly-approaching pair whose TCA lies
+//    beyond the window but which already sits inside the screening radius —
+//    the earlier draft silently dropped the latter (a true positive).
 inline Conjunction screen(const CraftState& a, const CraftState& b,
                           double horizon_s,
                           double r_screen = canon::R_SCREEN_M) {
@@ -100,7 +104,7 @@ inline Conjunction screen(const CraftState& a, const CraftState& b,
         t_raw = -(dr.dot(dv)) / dv2;
     }
 
-    if (t_raw <= 0.0) {
+    if ((t_raw <= 0.0) || (t_raw > horizon_s)) {
         c.t_ca = 0.0;
         c.miss_vector = dr;
     } else {
@@ -108,7 +112,7 @@ inline Conjunction screen(const CraftState& a, const CraftState& b,
         c.miss_vector = dr + dv * t_raw;
     }
     c.miss_distance = c.miss_vector.norm();
-    c.detected = (t_raw <= horizon_s) && (c.miss_distance < r_screen);
+    c.detected = (c.miss_distance < r_screen);
     return c;
 }
 

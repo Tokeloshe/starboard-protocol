@@ -138,6 +138,14 @@ double sb_starboard_pc(const Conjunction *conj, Sym33 c_comb, double r_hb)
     {
         b = SB_VAR_FLOOR_M2;
     }
+    /* PSD repair (SPEC §4.4): a malformed covariance with cx^2 > a*b would
+     * drive the Cholesky sqrt negative, Pc would go NaN, and a NaN silently
+     * fails the actionability threshold. Canonical repair: drop the
+     * correlation. */
+    if ((cx * cx) > (a * b))
+    {
+        cx = 0.0;
+    }
     det = (a * b) - (cx * cx);
     det_floor = SB_VAR_FLOOR_M2 * SB_VAR_FLOOR_M2;
     if (det < det_floor)
@@ -202,6 +210,12 @@ double sb_starboard_pc(const Conjunction *conj, Sym33 c_comb, double r_hb)
     return pc;
 }
 
+/* THE canonical covariance-combination policy (SPEC §4.3): quantized sum. */
+Sym33 sb_combined_covariance(Sym33 cov_a, Sym33 cov_b)
+{
+    return sb_cov_quantize(sb_cov_add(cov_a, cov_b));
+}
+
 bool sb_actionable(const Conjunction *conj)
 {
     return conj->detected &&
@@ -216,8 +230,7 @@ Conjunction sb_assess(CraftState a, CraftState b, Sym33 cov_a, Sym33 cov_b,
                               horizon_s, SB_R_SCREEN_M);
     if (c.detected)
     {
-        c.pc = sb_starboard_pc(&c, sb_cov_quantize(sb_cov_add(cov_a, cov_b)),
-                               r_hb);
+        c.pc = sb_starboard_pc(&c, sb_combined_covariance(cov_a, cov_b), r_hb);
     }
     return c;
 }

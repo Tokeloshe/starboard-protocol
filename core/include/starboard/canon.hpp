@@ -27,6 +27,17 @@
 #include <cmath>
 #include <cstdint>
 
+// Disable FP contraction in-source (SPEC §3.5): a fused multiply-add changes
+// verdict-path bits, breaking cross-vendor agreement. Clang honors this
+// pragma (verified to hold even under -mfma); GCC's frontend does not
+// implement it (and warns), so a conformant GCC build MUST ALSO pass
+// -ffp-contract=off (CMakeLists.txt does). Belt and suspenders — and
+// arithmetic_profile_ok() below lets an integrator VERIFY the outcome at
+// runtime instead of trusting build flags.
+#if defined(__clang__) || !defined(__GNUC__)
+#pragma STDC FP_CONTRACT OFF
+#endif
+
 namespace starboard {
 namespace canon {
 
@@ -189,6 +200,23 @@ inline double canon_cos(double x) {
     double s, c;
     canon_sincos(x, &s, &c);
     return c;
+}
+
+// --- §3.5 Runtime self-check of the Strict Arithmetic Profile ----------------
+// Returns true iff a*b + c is NOT being contracted into a fused multiply-add.
+// With a = b = 1 + 2^-27 and c = -(1 + 2^-26):  a*b = 1 + 2^-26 + 2^-54,
+// which correct double rounding truncates to exactly 1 + 2^-26, so the sum
+// is exactly 0. A fused multiply-add keeps the 2^-54 term and returns it
+// instead. `volatile` defeats compile-time folding so the check exercises
+// the code generation actually flying. Flight software SHOULD call this at
+// boot and refuse to produce verdicts if it fails — a build with contraction
+// enabled disagrees with every conformant peer.
+inline bool arithmetic_profile_ok() {
+    volatile double a = 1.0 + 7.450580596923828125e-09;   // 1 + 2^-27
+    volatile double b = 1.0 + 7.450580596923828125e-09;   // 1 + 2^-27
+    volatile double c = -(1.0 + 1.490116119384765625e-08); // -(1 + 2^-26)
+    const double r = a * b + c;
+    return r == 0.0;
 }
 
 } // namespace canon

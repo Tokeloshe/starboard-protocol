@@ -56,6 +56,14 @@ inline Sym33 cov_quantize(const Sym33& c) {
             canon::quantize(c.zz, canon::Q_COV_M2)};
 }
 
+// THE canonical covariance-combination policy (SPEC §4.3), defined once:
+// quantized sum of the two published covariances. Every entry point into
+// Starboard-Pc MUST combine through this helper so a future policy change
+// (e.g. a PSD floor after combining) lands everywhere at once.
+inline Sym33 combined_covariance(const Sym33& cov_a, const Sym33& cov_b) {
+    return cov_quantize(cov_add(cov_a, cov_b));
+}
+
 // u' C v with pinned expansion order (SPEC §4.4).
 inline double cov_quad(const Sym33& c, const Vec3& u, const Vec3& v) {
     const double row_x = (c.xx * v.x + c.xy * v.y) + c.xz * v.z;
@@ -114,9 +122,15 @@ inline double starboard_pc(const Conjunction& conj, const Sym33& c_comb,
     // --- Project the combined covariance into the plane ---
     double a  = cov_quad(c_comb, e1, e1);
     double b  = cov_quad(c_comb, e2, e2);
-    const double cx = cov_quad(c_comb, e1, e2);
+    double cx = cov_quad(c_comb, e1, e2);
     if (a < canon::VAR_FLOOR_M2) { a = canon::VAR_FLOOR_M2; }
     if (b < canon::VAR_FLOOR_M2) { b = canon::VAR_FLOOR_M2; }
+    // PSD repair (SPEC §4.4): a malformed or hostile covariance can project
+    // to |cx| with cx^2 > a*b (not positive-semidefinite). Without repair the
+    // Cholesky below takes sqrt of a negative number, Pc becomes NaN, and a
+    // NaN silently fails the actionability threshold — a bad covariance
+    // would DISABLE the gate. Canonical repair: drop the correlation.
+    if (cx * cx > a * b) { cx = 0.0; }
     double det = a * b - cx * cx;
     const double det_floor = canon::VAR_FLOOR_M2 * canon::VAR_FLOOR_M2;
     if (det < det_floor) { det = det_floor; }
@@ -181,7 +195,7 @@ inline Conjunction assess(const CraftState& a, const CraftState& b,
                           double r_hb, double horizon_s) {
     Conjunction c = screen(canonicalize(a), canonicalize(b), horizon_s);
     if (c.detected) {
-        c.pc = starboard_pc(c, cov_quantize(cov_add(cov_a, cov_b)), r_hb);
+        c.pc = starboard_pc(c, combined_covariance(cov_a, cov_b), r_hb);
     }
     return c;
 }

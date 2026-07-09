@@ -17,6 +17,8 @@
 
 #include "starboard/starboard.hpp"
 
+#include "../support.hpp"
+
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -25,14 +27,6 @@
 #include <vector>
 
 using namespace starboard;
-
-static uint64_t lcg(uint64_t& s) {
-    s = s * 6364136223846793005ull + 1442695040888963407ull;
-    return s;
-}
-static double urand(uint64_t& s) {
-    return static_cast<double>(lcg(s) >> 11) / 9007199254740992.0;
-}
 
 static CraftState from_elements(double a, double e, double inc, double raan,
                                 double nu) {
@@ -70,23 +64,23 @@ static double max_speed(const CraftState& s) {
 static std::vector<CraftState> make_constellation(uint32_t n, uint64_t seed) {
     std::vector<CraftState> objs;
     objs.reserve(n + n / 8u);
-    uint64_t s = seed;
+    sbtest::Lcg rng(seed);
     const double incs[6] = {0.0, 28.0, 53.0, 70.0, 87.0, 98.0};
     for (uint32_t i = 0u; i < n; ++i) {
-        const double alt = 400.0e3 + 800.0e3 * urand(s);
+        const double alt = 400.0e3 + 800.0e3 * rng.uniform();
         const double a = canon::R_EARTH_M + alt;
-        const double e = 0.002 * urand(s);
+        const double e = 0.002 * rng.uniform();
         objs.push_back(from_elements(a, e, incs[i % 6] * canon::PI / 180.0,
-                                     2.0 * canon::PI * urand(s),
-                                     2.0 * canon::PI * urand(s)));
+                                     2.0 * canon::PI * rng.uniform(),
+                                     2.0 * canon::PI * rng.uniform()));
     }
     // Seed ~n/8 genuine near-collision pairs (cross-track clone).
     const uint32_t base = n;
     for (uint32_t k = 0u; k < n / 8u; ++k) {
-        const uint32_t i = static_cast<uint32_t>(urand(s) * base);
+        const uint32_t i = static_cast<uint32_t>(rng.uniform() * base);
         CraftState c = objs[i];
         const Vec3 ch = c.position.cross(c.velocity).normalized();
-        c.position = c.position + ch * (100.0 + 100.0 * urand(s));
+        c.position = c.position + ch * (100.0 + 100.0 * rng.uniform());
         objs.push_back(c);
     }
     return objs;
@@ -104,34 +98,39 @@ static std::vector<broadphase::Pair> stage2(
     const double D = canon::R_SCREEN_M + 2.0 * vmax_global * (dt * 0.5);
     const int n_slices =
         static_cast<int>(canon::SCREEN_ARC_MAX_S / dt) + 1;
-    // Only objects appearing in Stage-1 pairs matter.
+    // Only objects appearing in Stage-1 pairs matter. March each live
+    // object's state forward slice by slice (dt is an exact multiple of the
+    // canonical 4 s step, so this is bit-identical to from-epoch propagation
+    // and turns the O(slices^2) from-epoch cost into O(slices)).
     std::vector<uint8_t> live(objs.size(), 0u);
     for (const auto& p : stage1) { live[p.i] = 1u; live[p.j] = 1u; }
+    std::vector<uint32_t> ids;
+    std::vector<CraftState> march;
+    for (uint32_t i = 0u; i < objs.size(); ++i) {
+        if (!live[i]) { continue; }
+        ids.push_back(i);
+        march.push_back(canonicalize(objs[i]));
+    }
 
     // For each slice, hash live objects' cell -> object list, emit same/adjacent
     // cell pairs into a dedup set.
     std::unordered_map<uint64_t, uint64_t> seen; // packed pair -> 1
     std::vector<broadphase::Pair> out;
     std::unordered_map<int64_t, std::vector<uint32_t>> grid;
+    std::vector<Vec3> pos(ids.size());
     for (int sl = 0; sl < n_slices; ++sl) {
-        const double t = dt * static_cast<double>(sl);
         grid.clear();
-        std::vector<uint32_t> ids;
-        std::vector<Vec3> pos;
-        for (uint32_t i = 0u; i < objs.size(); ++i) {
-            if (!live[i]) { continue; }
-            const Vec3 p = propagate(canonicalize(objs[i]), t).position;
+        for (uint32_t slot = 0u; slot < ids.size(); ++slot) {
+            if (sl > 0) { march[slot] = propagate(march[slot], dt); }
+            const Vec3 p = march[slot].position;
+            pos[slot] = p;
             const int64_t cx = static_cast<int64_t>(std::floor(p.x / D));
             const int64_t cy = static_cast<int64_t>(std::floor(p.y / D));
             const int64_t cz = static_cast<int64_t>(std::floor(p.z / D));
-            const uint32_t slot = static_cast<uint32_t>(ids.size());
-            ids.push_back(i);
-            pos.push_back(p);
             // Insert into the object's cell only; query 27-neighbourhood below.
             const int64_t key = (cx * 73856093LL) ^ (cy * 19349663LL) ^
                                 (cz * 83492791LL);
             grid[key].push_back(slot);
-            (void)slot;
         }
         // Query: for each object, scan its 27 neighbour cells.
         for (uint32_t a = 0u; a < ids.size(); ++a) {
@@ -181,6 +180,10 @@ int main() {
         const uint32_t n1 = broadphase::radial_band_pairs(
             objs.data(), M, bands.data(), active.data(), s1.data(), s1.size(),
             &ovf);
+        if (ovf) {
+            std::printf("stage 1 overflow (unexpected: buffer is N^2/2)\n");
+            return 1;
+        }
         s1.resize(n1);
         auto s2 = stage2(objs, s1, vmax);
         // brute truth
@@ -229,6 +232,10 @@ int main() {
         const uint32_t n1 = broadphase::radial_band_pairs(
             objs.data(), M, bands.data(), active.data(), s1.data(), s1.size(),
             &ovf);
+        if (ovf) {
+            std::printf("stage 1 overflow (unexpected: buffer is N^2/2)\n");
+            return 1;
+        }
         s1.resize(n1);
         const auto t0 = std::chrono::steady_clock::now();
         auto s2 = stage2(objs, s1, vmax);

@@ -67,8 +67,7 @@ static bool sb_finalize(CraftState a0, CraftState b0, Sym33 cov_a, Sym33 cov_b,
     c.pc = 0.0;
     if (c.detected)
     {
-        c.pc = sb_starboard_pc(&c, sb_cov_quantize(sb_cov_add(cov_a, cov_b)),
-                               r_hb);
+        c.pc = sb_starboard_pc(&c, sb_combined_covariance(cov_a, cov_b), r_hb);
     }
     oc->conj = c;
     return c.detected;
@@ -88,6 +87,10 @@ bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
     double gap;
     Vec3 dr0;
     double g0;
+    bool inside_now;
+    CraftState ma;
+    CraftState mb;
+    long whole;
     double g_prev;
     double t_prev;
     double step;
@@ -110,8 +113,11 @@ bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
         return false;
     }
 
+    /* t = 0: inside-bubble, receding (at/past closest approach but still
+     * inside the screening radius). */
     g0 = sb_g_at(a0, b0, 0.0, &dr0);
-    if ((g0 >= 0.0) && (sb_vnorm(dr0) < SB_R_SCREEN_M))
+    inside_now = (sb_vnorm(dr0) < SB_R_SCREEN_M);
+    if ((g0 >= 0.0) && inside_now)
     {
         if (sb_finalize(a0, b0, cov_a, cov_b, r_hb, 0.0, out))
         {
@@ -119,12 +125,41 @@ bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
         }
     }
 
+    /* Grid samples at exact multiples of SCREEN_STEP_S are MARCHED
+     * incrementally: each 32 s sample is exactly 8 whole PROP_STEP_S steps
+     * with no partial step, so advancing the cached states is the identical
+     * whole-step sequence as propagate-from-epoch — bit-equal by the pinned
+     * step decomposition (propagator.c), ~16x cheaper. The final clamped
+     * sample (t = arc when arc is not a grid multiple) and all bisection
+     * mids use from-epoch sb_propagate(), whose bits are the definition. */
+    ma = a0;
+    mb = b0;
+    step = SB_SCREEN_STEP_S;
+    whole = (long)(step / SB_PROP_STEP_S);
     g_prev = g0;
     t_prev = 0.0;
-    step = SB_SCREEN_STEP_S;
-    for (t = step; ; t = ((t + step) < arc) ? (t + step) : arc)
+    for (t = ((step < arc) ? step : arc); ;
+         t = ((t + step) < arc) ? (t + step) : arc)
     {
-        const double g_now = sb_g_at(a0, b0, t, NULL);
+        double g_now;
+        if (t == (t_prev + step))
+        {
+            long k;
+            Vec3 dr;
+            Vec3 dv;
+            for (k = 0; k < whole; ++k)
+            {
+                sb_rk4_step(&ma, SB_PROP_STEP_S);
+                sb_rk4_step(&mb, SB_PROP_STEP_S);
+            }
+            dr = sb_vsub(mb.position, ma.position);
+            dv = sb_vsub(mb.velocity, ma.velocity);
+            g_now = sb_vdot(dr, dv);
+        }
+        else
+        {
+            g_now = sb_g_at(a0, b0, t, NULL);
+        }
         if ((g_prev < 0.0) && (g_now >= 0.0))
         {
             double lo = t_prev;
@@ -153,6 +188,17 @@ bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
         if (t >= arc)
         {
             break;
+        }
+    }
+
+    /* Fallback: an APPROACHING pair already inside the screening radius whose
+     * TCA lies beyond the bounded arc produces no sign change above — but it
+     * is inside the bubble NOW and MUST be reported (SPEC §4.2a). */
+    if (inside_now)
+    {
+        if (sb_finalize(a0, b0, cov_a, cov_b, r_hb, 0.0, out))
+        {
+            return true;
         }
     }
     return false;

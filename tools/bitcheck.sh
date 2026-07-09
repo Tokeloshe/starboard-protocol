@@ -31,6 +31,14 @@ trap 'rm -rf "$TMP"' EXIT
 if [ "${1:-}" = "--pin" ]; then
     "${COMPILERS[0]}" $FLAGS_COMMON -O2 conformance/runner.cpp -o "$TMP/pin" \
         || exit 2
+    # Never pin a golden transcript from a build that fails its own
+    # conformance vectors — a broken build would otherwise become the
+    # reference every other build is judged against.
+    if ! "$TMP/pin" > "$TMP/pin_conformance.log"; then
+        echo "bitcheck: REFUSING to pin — conformance suite fails:" >&2
+        sed 's/^/    /' "$TMP/pin_conformance.log" >&2
+        exit 2
+    fi
     "$TMP/pin" --bits > "$GOLDEN"
     echo "bitcheck: pinned golden transcript from ${COMPILERS[0]} -O2:"
     sed 's/^/    /' "$GOLDEN"

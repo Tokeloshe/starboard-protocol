@@ -1,6 +1,6 @@
 # Starboard Specification — The Rules of the Orbital Road
 
-**Ruleset SB/1 · Specification v0.5 (draft) · `RULESET_ID = 0x53420001`**
+**Ruleset SB/1 · Specification v0.5.1 (draft) · `RULESET_ID = 0x53420001`**
 
 *Specification text © 2026 James H, licensed CC BY 4.0. The reference
 implementation in `core/` is dual-licensed AGPL-3.0 / commercial.*
@@ -153,7 +153,14 @@ verdict-path bits (a demonstrated `-mfma` build shifts the `pc-kernel` and
 OFF` (honored by Clang and conforming C11 compilers — it holds even under
 `-mfma`) **and**, on compilers whose C frontend ignores that pragma (GCC),
 the `-ffp-contract=off` flag. The reference C++ build and the C99 port both
-apply the belt-and-suspenders combination.
+apply the belt-and-suspenders combination. Because both mechanisms are
+build-time promises, the reference additionally ships a **runtime
+self-check** (`canon::arithmetic_profile_ok()` / `sb_arithmetic_profile_ok()`):
+with `a = b = 1 + 2⁻²⁷` and `c = −(1 + 2⁻²⁶)`, correctly-rounded evaluation
+of `a·b + c` is exactly `0` while a fused multiply-add returns `2⁻⁵⁴`.
+Flight software SHOULD run it at boot and refuse to produce verdicts on
+failure; the conformance runner and the C99 transcript binary refuse to
+start if it fails.
 
 ### 3.6 Canonical constants
 
@@ -269,6 +276,17 @@ Normative algorithm (`screening.hpp`), per pair over `[0, arc]`,
    for both craft, `miss = r_B − r_A`, `‖miss‖ < R_SCREEN` to detect, then
    Starboard-Pc (§4.5). `t = 0` uses the inside-bubble semantics: already
    past closest approach but still inside `R_SCREEN` is a conjunction now.
+5. **Inside-bubble fallback.** If the walk finds no sign change but the pair
+   is inside `R_SCREEN` at `t = 0` (an approaching pair whose TCA lies
+   beyond the bounded arc), the conjunction MUST still be reported at
+   `t = 0`: proximity now is never waived by a distant TCA.
+
+*Implementation note (non-normative).* Grid samples at exact multiples of
+`SCREEN_STEP_S` may be marched incrementally (each 32 s sample is exactly 8
+whole `PROP_STEP_S` steps, so the whole-step sequence — and therefore every
+bit — is identical to propagating from the epoch, ~16× cheaper). Bisection
+midpoints and any clamped final sample MUST use from-epoch propagation,
+whose bits are the definition.
 
 Every quantity in the walk is a shared, bit-deterministic function of the
 CDM, so both craft find the same conjunctions with the same TCAs to the bit
@@ -278,20 +296,16 @@ epoch (§5.1).
 
 *The linear kernel* (`geometry.hpp`) remains normative for the encounter
 itself: given a relative state, `t_raw = −(dr·dv)/(dv·dv)` (0 when
-co-drifting); `t_raw ≤ 0` means at/past closest approach — detected iff
-still inside `R_SCREEN` ("inside the bubble"); `t_raw` beyond the window is
-NOT detected (clamping to the horizon and testing there mis-detects). The
-kernel-level conformance vectors (SB-001…012) are specified in this model.
-
-```
-            ORBX ●──────▶ v_B
-                  ╲
-                   ╲ relative track
-     encounter      ╲            e₂ ▲
-     plane ⊥ v_rel ──╳────        │
-                    ╱ ╲ miss      ●──▶ e₁ = miss direction
-        v_A ◀──────● ACME         (in-plane miss = (d, 0))
-```
+co-drifting). A `t_raw` inside `(0, horizon]` is an encounter **at** the
+closest approach: `t_ca := t_raw`, detected iff the miss there is inside
+`R_SCREEN`. A `t_raw` outside that window — at/past closest approach
+(`t_raw ≤ 0`) **or** beyond the horizon — is assessed **where you are now**:
+`t_ca := 0`, miss := current separation, detected iff currently inside
+`R_SCREEN` ("inside the bubble"). This covers both the receding pair that
+has not yet cleared the bubble and the slowly-approaching pair whose TCA
+lies past the horizon but which already sits inside the screening radius.
+The kernel-level conformance vectors (SB-001…012) are specified in this
+model.
 
 ```
             ORBX ●──────▶ v_B
@@ -325,9 +339,17 @@ If `‖dv‖ < 10⁻⁹` m/s the encounter plane does not exist and
   perpendicular if degenerate
 * `e₂ = n̂ × e₁`
 
-The projected covariance is `a = e₁ᵀCe₁`, `b = e₂ᵀCe₂`, `c = e₁ᵀCe₂` (each
-floored per §3.6), and the in-plane miss is `(d_p, 0)` with `d_p = miss·e₁`
-— by construction the miss vector lies in span(n̂, e₁).
+The projected covariance is `a = e₁ᵀCe₁`, `b = e₂ᵀCe₂`, `c = e₁ᵀCe₂` (`a`
+and `b` floored per §3.6), and the in-plane miss is `(d_p, 0)` with
+`d_p = miss·e₁` — by construction the miss vector lies in span(n̂, e₁).
+
+**PSD repair (normative).** If `c² > a·b` after flooring — a malformed or
+hostile covariance whose projection is not positive-semidefinite — the
+correlation MUST be dropped: `c := 0`. Without this repair the Cholesky in
+§4.5 takes the square root of a negative number, Pc becomes NaN, and a NaN
+compares false against `PC_ACTIONABLE` — a bad covariance would silently
+*disable* the actionability gate. The determinant floor `det ≥ VAR_FLOOR²`
+applies after the repair.
 
 ### 4.5 Starboard-Pc (a defined quantity)
 
@@ -513,6 +535,16 @@ CRITICAL (2) > OPERATIONAL (1) > DEORBITING (0). Lower tier gives way.
 If exactly one of `overtakes(lo,hi)`, `overtakes(hi,lo)` holds, that craft
 gives way; otherwise fall through.
 
+*Trade-off note (informative).* The strictly-faster condition (a) means an
+approach from the stern sector at *equal* speed (within `EPS_SPEED`) is not
+classified as overtaking — it falls through to Rule 4/5. This is
+deliberate: near-equal speeds make "who is overtaking whom" numerically
+unstable (one lattice quantum could flip it), while Rules 4–5 decide the
+same encounter from quantities with proper dead-bands. COLREGS 13 has the
+same boundary ambiguity and resolves it with "if in doubt, assume
+overtaking"; a deterministic protocol cannot have doubt, so it routes the
+doubt to a total rule instead.
+
 **Rule 4 — starboard.** The **approach bearing** of y as seen from x is
 `−(v_y − v_x)`: y's relative position before TCA is `miss − dv·Δt`,
 dominated by `−dv`. x *sees y to starboard* iff that bearing has a
@@ -623,8 +655,25 @@ error). The minimum-norm solution is analytic:
 One line, no iteration, no optimizer — suitable for a flight computer. The
 resulting burn automatically exploits orbital dynamics (e.g. an along-track
 burn to achieve a radial displacement at ~26% less Δv than the naive
-impulse; see the demo). Degenerate zero-miss geometry pushes cross-track,
-signed + for `lo` and − for `hi` so Theorem 2 survives.
+impulse; see the demo).
+
+A burn is planned when `d_miss < κ·R_SAFE` **or** `Pc ≥ PC_ACTIONABLE`.
+When actionable on Pc alone (large covariance with the geometric miss
+already at target), `Δd := κ·R_SAFE` — open by a full margin quantum, a
+deterministic monotonic risk reduction — and the craft re-screens after
+execution. (An earlier draft planned no burn in this case and the protocol
+dead-ended with the risk unmitigated.)
+
+**Degenerate zero-miss geometry** (`d_miss ≤ EPS_LATERAL`): there is no
+natural away direction, so the push direction is the **pinned
+perpendicular** (§4.4) of the *shared* encounter axis — the normalized
+relative velocity (or the position direction when co-drifting). Both craft
+see the relative velocity as exact negations and the pinned perpendicular
+satisfies `p(n̂) = p(−n̂)`, so both derive the *same* direction `p`; signing
+it + for `lo` and − for `hi` then guarantees opposite pushes in **every**
+geometry — including counter-rotating head-on, where an own-frame
+cross-track direction fails to oppose (ĉ_hi ≈ −ĉ_lo would make both craft
+push the same inertial way). Theorem 2 survives by construction.
 
 The give-way craft MUST achieve `d ≥ R_SAFE` at TCA by its own action alone
 — the plan never assumes cooperation. The stand-on craft MUST NOT maneuver
@@ -683,6 +732,15 @@ assigned role is sticky within the window):
   the pair then evaluates normally.
 * If the resulting give-way craft was stand-on-locked (only possible when
   both craft were), the verdict stands but is flagged **ESCALATED** (§7.5).
+* **Advisory verdicts record no locks.** An advisory pair (neither craft
+  trusted to maneuver, §5) names a give-way craft for *alerting only* —
+  nobody is trusted to act, so it commits no one. Without this rule an
+  unverifiable derelict could acquire a give-way lock and later "absorb" a
+  real conjunction through the cascade branch, telling a healthy
+  counterpart to stand on while a corpse is supposedly maneuvering.
+* Malformed windows are rejected whole: any entry whose craft indices are
+  out of range or self-paired makes `resolve_window` return 0 verdicts —
+  bad input is never indexed.
 
 ### 7.5 Escalation and re-screening
 
@@ -890,3 +948,23 @@ no-FP-contraction requirement in-source (`#pragma STDC FP_CONTRACT OFF` plus
 the build flag, §3.5) so bit-agreement no longer depends on a remembered
 compiler option. Draft revisions before first publication share `RULESET_ID`;
 the id-bump discipline (§11, §9.3) starts at publication.
+
+**v0.5 → v0.5.1 (pre-publication audit):** a full-code review before the
+first public release, all fixes landed together. Verdict-path semantics:
+the linear kernel's out-of-window branch now assesses the pair **where it
+is now** (§4.2a) — the earlier draft silently dropped an approaching pair
+already inside the bubble whose TCA lay past the horizon — and the orbital
+search gained the matching inside-bubble fallback; the encounter-plane
+projection gained **PSD repair** (§4.4: `c := 0` when `c² > a·b`), closing
+the NaN-disables-the-gate hole against malformed/hostile covariance.
+Maneuver: a conjunction actionable on **Pc alone** now plans a burn (§6.4;
+previously it planned nothing and the risk was never mitigated), and the
+degenerate zero-miss push direction is the pinned perpendicular of the
+*shared* encounter axis, restoring Theorem 2 in counter-rotating head-on
+geometry. Multi-body: **advisory verdicts no longer record locks** (§7.3 —
+a derelict could previously absorb a real conjunction via the cascade) and
+malformed windows are rejected before indexing. `evaluate()` dropped its
+unused `Conjunction` parameter (the verdict consumes descriptors + epoch
+only). Added the §3.5 runtime contraction self-check. None of these change
+any pinned bit: the golden `--bits` transcript and all SB-C2 anchors are
+unchanged, and the C99 port mirrors every fix.

@@ -7,7 +7,8 @@
 // reads this, re-projects per the SPEC and integrates the encounter-plane
 // Gaussian over the hard-body disc with adaptive quadrature (an independent
 // implementation AND an independent integration method), and reports the
-// relative error of Starboard-Pc (Chan's series) against that reference.
+// relative error of Starboard-Pc (the Patera contour integral) against that
+// reference.
 //
 //   g++ -std=c++17 -ffp-contract=off -O2 -Icore/include
 //       conformance/validation/pc_dump.cpp -o /tmp/pc_dump && /tmp/pc_dump
@@ -19,8 +20,12 @@
 
 using namespace starboard;
 
-static void emit(const Vec3& miss, const Vec3& vrel, const Sym33& c,
+static void emit(const Vec3& miss, const Vec3& vrel, const Sym33& c_in,
                  double hbr) {
+    // Quantize the covariance exactly as the flight path does (assess()
+    // combines then quantizes), so the reference validates the arithmetic
+    // the verdict actually consumes — and the CSV records the same matrix.
+    const Sym33 c = cov_quantize(c_in);
     Conjunction conj;
     conj.detected = true;
     conj.t_ca = 100.0;

@@ -18,6 +18,7 @@
 #include "starboard/starboard.hpp"
 
 #include "registry_fixtures.hpp"
+#include "support.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -28,11 +29,10 @@ namespace {
 
 int g_failures = 0;
 
-uint64_t bits_of(double x) {
-    uint64_t u;
-    std::memcpy(&u, &x, sizeof(u));
-    return u;
-}
+using sbtest::bits_of;
+using sbtest::circular;
+using sbtest::crossing_against;
+using sbtest::lcg_next;
 
 void report(const char* id, const char* name, bool pass) {
     std::printf("  %-8s %-38s %s\n", id, name, pass ? "PASS" : "FAIL");
@@ -45,7 +45,8 @@ constexpr double V_LEO = 7600.0;
 constexpr double HORIZON_S = 3.0 * 5700.0;
 constexpr uint64_t EPOCH_MS = 1401000000000ull;
 
-// SB-C2 bit anchors for SB-013/SB-014 (pinned from the reference run).
+// SB-C2 bit anchors (pinned from the reference run).
+constexpr uint64_t SB001_PC_BITS   = 0x3F5117B3E9258534ull; // linear kernel Pc
 constexpr uint64_t SB013_TCA_BITS  = 0x4089000000000000ull; // 800.0 s exact
 constexpr uint64_t SB013_PC_BITS   = 0x3F5117B4A88B614Cull; // 1.043e-03
 constexpr uint64_t SB014_SIN1_BITS = 0x3FEAED548F090CEEull;
@@ -93,8 +94,8 @@ PairResult run_pair(const CraftDescriptor& a, const CraftDescriptor& b) {
     a_tca.state = linear_at(a.state, r.c_ab.t_ca);
     CraftDescriptor b_tca = b;
     b_tca.state = linear_at(b.state, r.c_ab.t_ca);
-    r.v_ab = evaluate(a_tca, b_tca, r.c_ab, EPOCH_MS);
-    r.v_ba = evaluate(b_tca, a_tca, c_ba, EPOCH_MS);
+    r.v_ab = evaluate(a_tca, b_tca, EPOCH_MS);
+    r.v_ba = evaluate(b_tca, a_tca, EPOCH_MS);
     r.agree = id_equal(r.v_ab.give_way_id, r.v_ba.give_way_id) &&
               (r.v_ab.deciding_rule == r.v_ba.deciding_rule) &&
               (r.v_ab.conjunction_id == r.v_ba.conjunction_id) &&
@@ -123,7 +124,7 @@ CraftDescriptor crossing_b() {
 // ---------------------------------------------------------------------------
 void sb001() {
     const PairResult r = run_pair(crossing_a(), crossing_b());
-    const bool pc_bits_ok = (bits_of(r.c_ab.pc) == 0x3F5117B3E9258534ull);
+    const bool pc_bits_ok = (bits_of(r.c_ab.pc) == SB001_PC_BITS);
     report("SB-001", "crossing: starboard craft gives way",
            expect(r, DecidingRule::STARBOARD, "2026-001A") &&
            actionable(r.c_ab) && pc_bits_ok);
@@ -204,34 +205,52 @@ void sb006() {
 
 // ---------------------------------------------------------------------------
 // SB-007  three-body window: capability verdict, then cascade lock.
+//
+// PHYSICAL geometry, found by the canonical screener: acme rides a circular
+// orbit; hulk (an untrusted derelict) crosses it at t=420 s, orbx crosses at
+// t=800 s. Both TCA epochs derive from the shared epoch + screened t_ca, so
+// the window ordering is exactly what every participant computes on orbit.
+// The pass must (1) hand acme the give-way under Rule 1 against the derelict,
+// then (2) cascade acme's GIVE_WAY lock onto the orbx pair — one combined
+// burn instead of two.
 // ---------------------------------------------------------------------------
 void sb007() {
-    const CraftDescriptor acme = crossing_a();
-    const CraftDescriptor orbx = crossing_b();
-    CraftDescriptor hulk =
-        mk("1999-025DEB", Tier::DEORBITING, false, TrustLevel::ASSERTED,
-           Vec3(-V_LEO * 900.0, 60.0, R_LEO + 40.0),
-           Vec3(V_LEO * 1.01, 0.0, 0.0), canon::DEFAULT_VAR_M2);
+    CraftDescriptor acme = mk("2026-001A", Tier::OPERATIONAL, true,
+                              TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
+    acme.state = canonicalize(circular(R_LEO, 0.0, 0.0));
+    CraftDescriptor hulk = mk("1999-025DEB", Tier::DEORBITING, false,
+                              TrustLevel::ASSERTED, Vec3{}, Vec3{},
+                              canon::DEFAULT_VAR_M2);
+    hulk.state = canonicalize(crossing_against(acme.state, 420.0, 40.0,
+                                               35.0 * canon::PI / 180.0));
+    CraftDescriptor orbx = mk("2026-044B", Tier::OPERATIONAL, true,
+                              TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
+    orbx.state = canonicalize(crossing_against(acme.state, 800.0, 150.0,
+                                               0.25 * canon::PI));
+
+    OrbitConjunction c_ah, c_ao;
+    const bool f_ah = screen_orbits(acme.state, hulk.state, acme.covariance,
+                                    hulk.covariance, 20.0,
+                                    canon::SCREEN_ARC_MAX_S, &c_ah);
+    const bool f_ao = screen_orbits(acme.state, orbx.state, acme.covariance,
+                                    orbx.covariance, 20.0,
+                                    canon::SCREEN_ARC_MAX_S, &c_ao);
 
     const CraftDescriptor fleet[3] = {acme, orbx, hulk};
-    const double hbr = 2.0 * canon::DEFAULT_HBR_M;
-    const Conjunction c_ah = assess(acme.state, hulk.state, acme.covariance,
-                                    hulk.covariance, hbr, HORIZON_S);
-    const Conjunction c_ao = assess(acme.state, orbx.state, acme.covariance,
-                                    orbx.covariance, hbr, HORIZON_S);
+    const auto tca_ms = [](double t_ca) {
+        return EPOCH_MS + static_cast<uint64_t>(t_ca * 1000.0);
+    };
     WindowEntry win[2];
-    win[0] = {0u, 2u, c_ah, EPOCH_MS - 1800000ull,
-              linear_at(acme.state, c_ah.t_ca),
-              linear_at(hulk.state, c_ah.t_ca)};
-    win[1] = {0u, 1u, c_ao, EPOCH_MS,
-              linear_at(acme.state, c_ao.t_ca),
-              linear_at(orbx.state, c_ao.t_ca)};
+    win[0] = {0u, 2u, tca_ms(c_ah.conj.t_ca), c_ah.a_tca, c_ah.b_tca};
+    win[1] = {0u, 1u, tca_ms(c_ao.conj.t_ca), c_ao.a_tca, c_ao.b_tca};
     WindowVerdict wv[2];
     const uint32_t n = resolve_window(fleet, 3u, win, 2u, wv);
-    const bool ok = (n == 2u) &&
+    const bool ok = f_ah && f_ao &&
+                    c_ah.conj.detected && c_ao.conj.detected &&
+                    (n == 2u) &&
                     (wv[0].give_way_index == 0u) &&
                     (wv[0].deciding_rule == DecidingRule::CAPABILITY) &&
-                    !wv[0].escalated &&
+                    !wv[0].escalated && !wv[0].advisory &&
                     (wv[1].give_way_index == 0u) &&
                     (wv[1].deciding_rule == DecidingRule::CASCADE) &&
                     !wv[1].escalated;
@@ -340,10 +359,6 @@ void sb011() {
 // different compilers (found by tools/bitcheck.sh — gcc and clang really do
 // disagree there). Sequencing by declaration makes the sweep well-defined.
 // ---------------------------------------------------------------------------
-uint64_t lcg_next(uint64_t s) {
-    return s * 6364136223846793005ull + 1442695040888963407ull;
-}
-
 void make_sweep_pair(int i, uint64_t* s, CraftDescriptor* a,
                      CraftDescriptor* b) {
     const auto rnd = [s]() {
@@ -391,32 +406,6 @@ void sb012() {
 //         demo's Act I geometry), conjunction FOUND by the orbital screener,
 //         verdict at the encounter. TCA/Pc are SB-C2 bit anchors.
 // ---------------------------------------------------------------------------
-CraftState circular(double r, double incl, double theta) {
-    const double v = std::sqrt(canon::MU_EARTH_M3S2 / r);
-    const double ct = std::cos(theta), st = std::sin(theta);
-    const double ci = std::cos(incl), si = std::sin(incl);
-    CraftState s;
-    s.position = Vec3(r * ct, r * st * ci, r * st * si);
-    s.velocity = Vec3(-v * st, v * ct * ci, v * ct * si);
-    return s;
-}
-
-// Build a craft crossing `ref` at time tc, `above` m higher, velocity tilted
-// `tilt` rad out of ref's plane; return its state back-propagated to epoch.
-CraftState crossing_against(const CraftState& ref, double tc, double above,
-                            double tilt) {
-    const CraftState rc = propagate(canonicalize(ref), tc);
-    const Vec3 rhat = rc.position.normalized();
-    const Vec3 vhat = rc.velocity.normalized();
-    const Vec3 chat = rhat.cross(vhat).normalized();
-    const double r_o = rc.position.norm() + above;
-    const double v_o = std::sqrt(canon::MU_EARTH_M3S2 / r_o);
-    CraftState cross;
-    cross.position = rhat * r_o;
-    cross.velocity = (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_o;
-    return propagate(cross, -tc);
-}
-
 void sb013() {
     const double R = 6.93e6;
     CraftDescriptor a = mk("2026-001A", Tier::OPERATIONAL, true,
@@ -442,8 +431,8 @@ void sb013() {
     a_tca.state = fwd.a_tca;
     CraftDescriptor b_tca = b;
     b_tca.state = fwd.b_tca;
-    const GiveWayVerdict v = evaluate(a_tca, b_tca, fwd.conj, EPOCH_MS);
-    const GiveWayVerdict w = evaluate(b_tca, a_tca, rev.conj, EPOCH_MS);
+    const GiveWayVerdict v = evaluate(a_tca, b_tca, EPOCH_MS);
+    const GiveWayVerdict w = evaluate(b_tca, a_tca, EPOCH_MS);
 
     const bool anchors =
         (bits_of(fwd.conj.t_ca) == SB013_TCA_BITS) &&
@@ -489,8 +478,22 @@ void sb014() {
     const Vec3 h0 = s0.position.cross(s0.velocity).normalized();
     const Vec3 h1 = out.position.cross(out.velocity).normalized();
     const bool j2_present = (h0 - h1).norm() > 1.0e-7;
-    report("SB-014", "canon trig + J2 propagator invertibility",
-           anchors && accurate && invertible && j2_present);
+    // Return-to-slot (SPEC §6.5): the quarter-period two-impulse transfer
+    // must land back on-slot, on-velocity in CW dynamics — verified by
+    // pushing the planned burns through the CW state transition itself.
+    const double n_ref = mean_motion(s0);
+    HillState off;
+    off.r = Vec3(120.0, -340.0, 60.0);
+    off.v = Vec3(0.10, -0.20, 0.05);
+    const ReturnPlan rp = plan_return(off, n_ref);
+    HillState dep = off;
+    dep.v = dep.v + rp.dv1_hill;
+    HillState arr = cw_propagate(dep, n_ref, rp.transfer_s);
+    arr.v = arr.v + rp.dv2_hill;
+    const bool return_ok = (arr.r.norm() < 1.0e-6) &&
+                           (arr.v.norm() < 1.0e-9) && (rp.total_dv > 0.0);
+    report("SB-014", "canon trig + J2 propagator + CW return",
+           anchors && accurate && invertible && j2_present && return_ok);
 }
 
 // ---------------------------------------------------------------------------
@@ -925,6 +928,12 @@ void emit_bits() {
 } // namespace
 
 int main(int argc, char** argv) {
+    if (!canon::arithmetic_profile_ok()) {
+        std::fprintf(stderr, "FATAL: FP contraction detected (SPEC §3.5) — "
+                             "this build cannot produce conformant "
+                             "verdicts.\n");
+        return 2;
+    }
     if ((argc > 1) && (std::strcmp(argv[1], "--bits") == 0)) {
         emit_bits();
         return 0;

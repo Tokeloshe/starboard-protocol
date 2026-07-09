@@ -29,6 +29,7 @@
 // dynamics — the maneuver is analytically reversible.
 // ============================================================================
 
+#include "covariance.hpp"
 #include "frames.hpp"
 
 namespace starboard {
@@ -60,7 +61,8 @@ inline GiveWayPlan plan_give_way(const CraftState& self_now,
                                  double r_safe = canon::R_SAFE_M) {
     GiveWayPlan plan;
     const double target = canon::MANEUVER_MARGIN * r_safe;
-    if (conj.miss_distance >= target) {
+    const bool pc_hot = (conj.pc >= canon::PC_ACTIONABLE);
+    if ((conj.miss_distance >= target) && !pc_hot) {
         plan.required = false;
         plan.dv_eci = Vec3{};
         plan.dv_hill = Vec3{};
@@ -79,14 +81,29 @@ inline GiveWayPlan plan_give_way(const CraftState& self_now,
     if (conj.miss_distance > canon::EPS_LATERAL_M) {
         u_away_eci = conj.miss_vector * (-1.0 / conj.miss_distance);
     } else {
-        // Degenerate near-zero miss: pinned cross-track push, signed by the
-        // canonical order so the two craft push in OPPOSITE directions if
-        // both ever maneuver.
-        const Vec3 chat =
-            self_now.position.cross(self_now.velocity).normalized();
-        u_away_eci = self_is_canonical_lo ? chat : (chat * -1.0);
+        // Degenerate near-zero miss: no natural away direction. Build the
+        // PINNED perpendicular of the SHARED encounter axis. Both craft see
+        // rel_velocity as exact negations, and pinned_perpendicular(n) ==
+        // pinned_perpendicular(-n), so both derive the SAME direction p;
+        // signing by canonical order then guarantees OPPOSITE pushes
+        // (Theorem 2) in every geometry — including counter-rotating
+        // head-on, where an own-frame cross-track direction fails to oppose
+        // (chat_hi ~ -chat_lo makes both push the same inertial way).
+        const double dvn = conj.rel_velocity.norm();
+        const Vec3 axis = (dvn > 1.0e-9)
+                              ? (conj.rel_velocity / dvn)
+                              : self_now.position.normalized();
+        const Vec3 p = detail::pinned_perpendicular(axis);
+        u_away_eci = self_is_canonical_lo ? p : (p * -1.0);
     }
-    const double d_needed = target - conj.miss_distance;
+    // Geometric shortfall when inside the target; when actionable on Pc
+    // alone (large covariance, miss already >= target) open by a full margin
+    // quantum — a deterministic, monotonic risk reduction — and re-screen
+    // after execution (SPEC §6.4): previously this case planned NO burn and
+    // the protocol dead-ended with the risk unmitigated.
+    const double d_needed = (conj.miss_distance < target)
+                                ? (target - conj.miss_distance)
+                                : target;
 
     const Vec3 u_hill = hill_basis(self_tca).mul(u_away_eci);
     const Mat3 phi = cw_phi_rv(n, tau);

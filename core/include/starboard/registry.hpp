@@ -191,9 +191,9 @@ inline void node_hash(const uint8_t left[HASH_BYTES],
         buf[1u + i] = left[i];
         buf[1u + HASH_BYTES + i] = right[i];
     }
-    uint8_t tmp[HASH_BYTES];
-    crypto::sha512(buf, sizeof(buf), tmp);
-    for (uint32_t i = 0u; i < HASH_BYTES; ++i) { out[i] = tmp[i]; }
+    // `out` may alias left/right (verify_inclusion folds in place): both
+    // inputs are fully copied into buf before sha512 touches out.
+    crypto::sha512(buf, sizeof(buf), out);
 }
 
 // Compute the root over n leaf hashes IN PLACE (nodes[] is destroyed).

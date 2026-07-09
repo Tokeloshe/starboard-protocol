@@ -91,6 +91,9 @@ inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
     const double gap = (alo > bhi) ? (alo - bhi) : (blo - ahi);
     if (gap > canon::R_SCREEN_M) { return false; }
 
+    // From-epoch evaluation of the range-rate sign function. Used for the
+    // t = 0 sample, the (rare) non-grid final sample, and bisection mids —
+    // its result is the canonical definition every path must match.
     const auto g_at = [&a0, &b0](double t, Vec3* dr_out) {
         const CraftState sa = propagate(a0, t);
         const CraftState sb = propagate(b0, t);
@@ -112,28 +115,53 @@ inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
         c.detected = (c.miss_distance < canon::R_SCREEN_M);
         c.pc = 0.0;
         if (c.detected) {
-            c.pc = starboard_pc(c, cov_quantize(cov_add(cov_a, cov_b)), r_hb);
+            c.pc = starboard_pc(c, combined_covariance(cov_a, cov_b), r_hb);
         }
         oc->conj = c;
         return c.detected;
     };
 
-    // t = 0: inside-bubble (already at/past closest approach but still inside
-    // the screening radius).
+    // t = 0: inside-bubble, receding (at/past closest approach but still
+    // inside the screening radius).
     Vec3 dr0;
     const double g0 = g_at(0.0, &dr0);
-    if ((g0 >= 0.0) && (dr0.norm() < canon::R_SCREEN_M)) {
+    const bool inside_now = (dr0.norm() < canon::R_SCREEN_M);
+    if ((g0 >= 0.0) && inside_now) {
         if (finalize(0.0, out)) { return true; }
     }
 
     // Grid walk: a range minimum lies in every step where g goes negative ->
     // non-negative. SCREEN_STEP_S is far below the relative-dynamics
     // timescale, so each step holds at most one extremum (SPEC §4.2a).
+    //
+    // Grid samples at exact multiples of SCREEN_STEP_S are MARCHED
+    // incrementally: each 32 s sample is exactly 8 whole PROP_STEP_S steps
+    // with no partial step, so advancing the cached states is the identical
+    // whole-step sequence as propagate-from-epoch — bit-equal by the pinned
+    // step decomposition (propagator.hpp), ~16x cheaper. The final clamped
+    // sample (t = arc when arc is not a grid multiple) and all bisection
+    // mids use from-epoch propagate(), whose bits are the definition.
+    CraftState ma = a0;              // marched state of a at t_prev
+    CraftState mb = b0;              // marched state of b at t_prev
+    const double step = canon::SCREEN_STEP_S;
+    const long whole = static_cast<long>(step / canon::PROP_STEP_S);
     double g_prev = g0;
     double t_prev = 0.0;
-    const double step = canon::SCREEN_STEP_S;
-    for (double t = step;; t = ((t + step) < arc) ? (t + step) : arc) {
-        const double g_now = g_at(t, nullptr);
+    for (double t = ((step < arc) ? step : arc);;
+         t = ((t + step) < arc) ? (t + step) : arc) {
+        double g_now;
+        if (t == (t_prev + step)) {
+            // Exact grid advance: 8 whole steps on the cached states.
+            for (long k = 0; k < whole; ++k) {
+                detail::rk4_step(ma, canon::PROP_STEP_S);
+                detail::rk4_step(mb, canon::PROP_STEP_S);
+            }
+            const Vec3 dr = mb.position - ma.position;
+            const Vec3 dv = mb.velocity - ma.velocity;
+            g_now = dr.dot(dv);
+        } else {
+            g_now = g_at(t, nullptr);    // clamped final sample: from epoch
+        }
         if ((g_prev < 0.0) && (g_now >= 0.0)) {
             double lo = t_prev;
             double hi = t;
@@ -147,6 +175,14 @@ inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
         g_prev = g_now;
         t_prev = t;
         if (t >= arc) { break; }
+    }
+
+    // Fallback: an APPROACHING pair already inside the screening radius whose
+    // TCA lies beyond the bounded arc produces no sign change above — but it
+    // is inside the bubble NOW and MUST be reported (SPEC §4.2a; the linear
+    // kernel's inside-bubble semantics, geometry.hpp).
+    if (inside_now) {
+        if (finalize(0.0, out)) { return true; }
     }
     return false;
 }

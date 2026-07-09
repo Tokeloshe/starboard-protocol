@@ -7,3 +7,4 @@ compile_commands.json
 conformance/validation/*.csv
 __pycache__/
 ports/c/sb_bits
+ports/c/sb_c_bits.txt

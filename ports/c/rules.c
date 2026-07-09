@@ -138,10 +138,13 @@ static bool sb_sees_on_starboard(const CraftDescriptor *x,
     return -(sb_vdot(dv, starboard)) > (SB_EPS_BEARING * dvn);
 }
 
-/* --- evaluate --- */
+/* --- evaluate ---
+ * The verdict consumes ONLY the descriptors (states at TCA + registry facts)
+ * and the epoch. The Conjunction gates WHETHER evaluate runs (sb_actionable,
+ * SPEC §4.7) — it is deliberately not a parameter. */
 GiveWayVerdict sb_evaluate(const CraftDescriptor *self,
                            const CraftDescriptor *other,
-                           const Conjunction *conj, uint64_t tca_epoch_ms)
+                           uint64_t tca_epoch_ms)
 {
     const bool self_is_lo =
         (sb_id_compare(&self->object_id, &other->object_id) <= 0);
@@ -156,8 +159,6 @@ GiveWayVerdict sb_evaluate(const CraftDescriptor *self,
     const Tier tier_lo = sb_effective_tier(lo->trust, lo->tier);
     const Tier tier_hi = sb_effective_tier(hi->trust, hi->tier);
     GiveWayVerdict v;
-
-    (void)conj;
 
     if (cm_lo != cm_hi)
     {

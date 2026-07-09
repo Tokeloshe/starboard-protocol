@@ -131,3 +131,16 @@ double sb_canon_cos(double x)
     sb_canon_sincos(x, &s, &c);
     return c;
 }
+
+/* §3.5 Runtime self-check of the Strict Arithmetic Profile. Returns true iff
+ * a*b + c is NOT being contracted into a fused multiply-add (see canon.hpp
+ * for the derivation). Flight software SHOULD call this at boot and refuse
+ * to produce verdicts if it fails. */
+bool sb_arithmetic_profile_ok(void)
+{
+    volatile double a = 1.0 + 7.450580596923828125e-09;    /* 1 + 2^-27 */
+    volatile double b = 1.0 + 7.450580596923828125e-09;    /* 1 + 2^-27 */
+    volatile double c = -(1.0 + 1.490116119384765625e-08); /* -(1 + 2^-26) */
+    const double r = (a * b) + c;
+    return r == 0.0;
+}

@@ -119,8 +119,8 @@ static PairResult run_pair(const CraftDescriptor *a, const CraftDescriptor *b)
     a_tca.state = linear_at(a->state, r.c_ab.t_ca);
     b_tca = *b;
     b_tca.state = linear_at(b->state, r.c_ab.t_ca);
-    r.v_ab = sb_evaluate(&a_tca, &b_tca, &r.c_ab, EPOCH_MS);
-    r.v_ba = sb_evaluate(&b_tca, &a_tca, &c_ba, EPOCH_MS);
+    r.v_ab = sb_evaluate(&a_tca, &b_tca, EPOCH_MS);
+    r.v_ba = sb_evaluate(&b_tca, &a_tca, EPOCH_MS);
     r.agree = sb_id_equal(&r.v_ab.give_way_id, &r.v_ba.give_way_id) &&
               (r.v_ab.deciding_rule == r.v_ba.deciding_rule) &&
               (r.v_ab.conjunction_id == r.v_ba.conjunction_id) &&
@@ -398,6 +398,12 @@ static void emit_bits(void)
 
 int main(void)
 {
+    if (!sb_arithmetic_profile_ok())
+    {
+        fprintf(stderr, "FATAL: FP contraction detected (SPEC §3.5) — this "
+                        "build cannot produce conformant verdicts.\n");
+        return 2;
+    }
     emit_bits();
     return 0;
 }

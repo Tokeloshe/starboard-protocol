@@ -122,7 +122,10 @@ Conjunction sb_screen(CraftState a, CraftState b, double horizon_s,
         t_raw = -(sb_vdot(dr, dv)) / dv2;
     }
 
-    if (t_raw <= 0.0)
+    /* An out-of-window TCA (past, or beyond the horizon) means the pair is
+     * assessed AT ITS CURRENT SEPARATION: a pair already inside the bubble
+     * is detected regardless of where its linear TCA falls. */
+    if ((t_raw <= 0.0) || (t_raw > horizon_s))
     {
         c.t_ca = 0.0;
         c.miss_vector = dr;
@@ -133,6 +136,6 @@ Conjunction sb_screen(CraftState a, CraftState b, double horizon_s,
         c.miss_vector = sb_vadd(dr, sb_vscale(dv, t_raw));
     }
     c.miss_distance = sb_vnorm(c.miss_vector);
-    c.detected = (t_raw <= horizon_s) && (c.miss_distance < r_screen);
+    c.detected = (c.miss_distance < r_screen);
     return c;
 }

@@ -21,15 +21,19 @@ GOLDEN  := ../../conformance/expected_bits.txt
 sb_bits: $(SRC) starboard.h
 	$(CC) $(CFLAGS) $(SRC) $(LDLIBS) -o $@
 
+# Transcript lands beside the build (not a fixed /tmp path): parallel checks
+# from two checkouts must not race on a shared world-writable file.
+BITS_OUT := $(CURDIR)/sb_c_bits.txt
+
 .PHONY: check clean
 check: sb_bits
-	./sb_bits > /tmp/sb_c_bits.txt
-	@if diff -q $(GOLDEN) /tmp/sb_c_bits.txt >/dev/null; then \
+	./sb_bits > $(BITS_OUT)
+	@if diff -q $(GOLDEN) $(BITS_OUT) >/dev/null; then \
 	  echo "SB-C2 cross-language: C99 port == golden transcript (byte-identical)"; \
 	else \
 	  echo "FAIL: C99 port diverges from golden:"; \
-	  diff $(GOLDEN) /tmp/sb_c_bits.txt; exit 1; \
+	  diff $(GOLDEN) $(BITS_OUT); exit 1; \
 	fi
 
 clean:
-	rm -f sb_bits
+	rm -f sb_bits sb_c_bits.txt

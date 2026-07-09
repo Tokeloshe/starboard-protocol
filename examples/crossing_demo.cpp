@@ -24,6 +24,8 @@
 
 #include "starboard/starboard.hpp"
 
+#include "../conformance/support.hpp"
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -31,6 +33,8 @@
 using namespace starboard;
 
 namespace {
+
+using sbtest::bits_of;
 
 const char* rule_str(DecidingRule r) {
     switch (r) {
@@ -44,29 +48,10 @@ const char* rule_str(DecidingRule r) {
     return "?";
 }
 
-uint64_t bits_of(double x) {
-    uint64_t u;
-    std::memcpy(&u, &x, sizeof(u));
-    return u;
-}
-
 void stamp(double t_rel_s, const char* msg) {
     const double a = (t_rel_s < 0.0) ? -t_rel_s : t_rel_s;
     std::printf(" T%c%03d:%02d  %s\n", (t_rel_s < 0.0) ? '-' : '+',
                 static_cast<int>(a) / 60, static_cast<int>(a) % 60, msg);
-}
-
-// A craft on a circular orbit of radius r, in the plane produced by rotating
-// the equatorial plane by `incl` about the +x axis, at phase angle theta
-// (theta = 0 is the ascending node on +x).
-CraftState circular_state(double r, double incl, double theta) {
-    const double v = std::sqrt(canon::MU_EARTH_M3S2 / r);
-    const double ct = std::cos(theta), st = std::sin(theta);
-    const double ci = std::cos(incl), si = std::sin(incl);
-    CraftState s;
-    s.position = Vec3(r * ct, r * st * ci, r * st * si);
-    s.velocity = Vec3(-v * st, v * ct * ci, v * ct * si);
-    return s;
 }
 
 } // namespace
@@ -93,7 +78,7 @@ int main() {
     CraftDescriptor acme;
     acme.object_id = make_object_id("2026-001A");
     acme.tier = Tier::OPERATIONAL;
-    acme.state = circular_state(R, 0.0, -n_ref * T_CROSS);
+    acme.state = sbtest::circular(R, 0.0, -n_ref * T_CROSS);
     acme.covariance = Sym33::diagonal(9.0e4);                  // sigma 300 m
 
     // ORBX-9: crosses ACME-1 at T_CROSS, 150 m above, on a 45 deg-tilted
@@ -104,20 +89,8 @@ int main() {
     orbx.object_id = make_object_id("2026-044B");
     orbx.tier = Tier::OPERATIONAL;
     orbx.covariance = Sym33::diagonal(9.0e4);
-    {
-        const CraftState a_cross = propagate(canonicalize(acme.state), T_CROSS);
-        const Vec3 rhat = a_cross.position.normalized();
-        const Vec3 vhat = a_cross.velocity.normalized();
-        const Vec3 chat = rhat.cross(vhat).normalized();
-        const double r_o = a_cross.position.norm() + 150.0;
-        const double v_o = std::sqrt(canon::MU_EARTH_M3S2 / r_o);
-        const double tilt = 0.25 * canon::PI;                 // 45 deg
-        CraftState orbx_cross;
-        orbx_cross.position = rhat * r_o;
-        orbx_cross.velocity =
-            (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_o;
-        orbx.state = propagate(orbx_cross, -T_CROSS);
-    }
+    orbx.state = sbtest::crossing_against(acme.state, T_CROSS, 150.0,
+                                          0.25 * canon::PI);   // 45 deg tilt
 
     std::printf(" Act I - two rivals, zero communication\n");
     std::printf("   ACME-1 [2026-001A]  ACME Space    equatorial, 552 km\n");
@@ -163,10 +136,8 @@ int main() {
     CraftDescriptor orbx_tca = orbx;
     orbx_tca.state = oc_a.b_tca;
 
-    const GiveWayVerdict v_acme =
-        evaluate(acme_tca, orbx_tca, oc_a.conj, tca_epoch_ms);
-    const GiveWayVerdict v_orbx =
-        evaluate(orbx_tca, acme_tca, oc_b.conj, tca_epoch_ms);
+    const GiveWayVerdict v_acme = evaluate(acme_tca, orbx_tca, tca_epoch_ms);
+    const GiveWayVerdict v_orbx = evaluate(orbx_tca, acme_tca, tca_epoch_ms);
 
     stamp(-oc_a.conj.t_ca, "each runs the Rules of the Orbital Road:");
     std::printf("   ACME-1   verdict: I %s   (%s)\n",
@@ -280,24 +251,10 @@ int main() {
     hulk.tier = Tier::DEORBITING;
     hulk.can_maneuver = false;
     hulk.trust = TrustLevel::ASSERTED;     // nobody can verify a corpse
-    {
-        // ACME-1's state at the intended crossing instant.
-        const CraftState a_cross = propagate(canonicalize(acme.state), t_hulk);
-        const Vec3 rhat = a_cross.position.normalized();
-        const Vec3 vhat = a_cross.velocity.normalized();
-        const Vec3 chat = rhat.cross(vhat).normalized();      // cross-track
-        const double r_h = a_cross.position.norm() + 40.0;
-        const double v_h = std::sqrt(canon::MU_EARTH_M3S2 / r_h);
-        // 40 m above ACME, velocity tilted 35 deg out of ACME's plane -> a
-        // genuine crossing at t_hulk.
-        const double tilt = 35.0 * canon::PI / 180.0;
-        CraftState hulk_cross;
-        hulk_cross.position = rhat * r_h;
-        hulk_cross.velocity =
-            (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_h;
-        // Back-propagate to the shared CDM epoch.
-        hulk.state = propagate(hulk_cross, -t_hulk);
-    }
+    // 40 m above ACME, velocity tilted 35 deg out of ACME's plane -> a
+    // genuine crossing at t_hulk, back-propagated to the shared CDM epoch.
+    hulk.state = sbtest::crossing_against(acme.state, t_hulk, 40.0,
+                                          35.0 * canon::PI / 180.0);
 
     OrbitConjunction oc_h;
     const bool found_h = screen_orbits(acme.state, hulk.state,
@@ -314,10 +271,9 @@ int main() {
 
     const CraftDescriptor fleet[3] = {acme, orbx, hulk};
     WindowEntry win[2];
-    win[0] = {0u, 2u, oc_h.conj,
-              T0_MS + static_cast<uint64_t>(oc_h.conj.t_ca * 1000.0),
+    win[0] = {0u, 2u, T0_MS + static_cast<uint64_t>(oc_h.conj.t_ca * 1000.0),
               oc_h.a_tca, oc_h.b_tca};
-    win[1] = {0u, 1u, oc_a.conj, tca_epoch_ms, oc_a.a_tca, oc_a.b_tca};
+    win[1] = {0u, 1u, tca_epoch_ms, oc_a.a_tca, oc_a.b_tca};
 
     WindowVerdict wv[2];
     const uint32_t n_resolved = resolve_window(fleet, 3u, win, 2u, wv);
@@ -330,7 +286,8 @@ int main() {
                     static_cast<unsigned long long>(wv[i].conjunction_id >> 32),
                     names[wv[i].give_way_index], names[wv[i].stand_on_index],
                     rule_str(wv[i].deciding_rule),
-                    wv[i].escalated ? "  [ESCALATED]" : "");
+                    wv[i].escalated ? "  [ESCALATED]"
+                                    : (wv[i].advisory ? "  [ADVISORY]" : ""));
     }
     std::printf("\n   The derelict's \"cannot maneuver\" is UNVERIFIED - the\n");
     std::printf("   conservative default treats it as debris and ACME-1 avoids\n");

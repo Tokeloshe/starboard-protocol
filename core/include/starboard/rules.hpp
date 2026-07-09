@@ -152,14 +152,16 @@ inline bool sees_on_starboard(const CraftDescriptor& x,
 // derives from quantized shared inputs). Theorem 1 (SPEC §5.8): for any pair
 // with canonical shared inputs, evaluate(A,B) and evaluate(B,A) return the
 // same give_way_id, deciding_rule and conjunction_id.
+//
+// Note the verdict consumes ONLY the descriptors (states at TCA + registry
+// facts) and the epoch. The Conjunction gates WHETHER evaluate runs
+// (actionable(), SPEC §4.7) — it is deliberately not a parameter, so no
+// integrator can be misled into thinking a stale miss vector changes the
+// verdict.
 // ---------------------------------------------------------------------------
 inline GiveWayVerdict evaluate(const CraftDescriptor& self,
                                const CraftDescriptor& other,
-                               const Conjunction& conj,
                                uint64_t tca_epoch_ms) {
-    (void)conj;  // the verdict depends only on shared states + registry facts;
-                 // conj gates WHETHER evaluate runs (see actionable()).
-
     // Canonical Pair Transform: order by id, decide once on (lo, hi).
     const bool self_is_lo = (id_compare(self.object_id, other.object_id) <= 0);
     const CraftDescriptor& lo = self_is_lo ? self : other;

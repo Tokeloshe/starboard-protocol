@@ -92,6 +92,7 @@ double sb_canon_exp(double x);
 void   sb_canon_sincos(double x, double *sin_out, double *cos_out);
 double sb_canon_sin(double x);
 double sb_canon_cos(double x);
+bool   sb_arithmetic_profile_ok(void);
 
 // ===========================================================================
 // id.hpp — canonical object identity.
@@ -158,6 +159,7 @@ typedef struct {
 Sym33  sb_sym33_diagonal(double v);
 Sym33  sb_cov_add(Sym33 a, Sym33 b);
 Sym33  sb_cov_quantize(Sym33 c);
+Sym33  sb_combined_covariance(Sym33 cov_a, Sym33 cov_b);
 double sb_cov_quad(Sym33 c, Vec3 u, Vec3 v);
 double sb_starboard_pc(const Conjunction *conj, Sym33 c_comb, double r_hb);
 bool   sb_actionable(const Conjunction *conj);
@@ -232,7 +234,7 @@ uint64_t sb_conjunction_id(const ObjectId *a, const ObjectId *b,
                            uint64_t tca_epoch_ms);
 GiveWayVerdict sb_evaluate(const CraftDescriptor *self,
                            const CraftDescriptor *other,
-                           const Conjunction *conj, uint64_t tca_epoch_ms);
+                           uint64_t tca_epoch_ms);
 
 // ===========================================================================
 // crypto/sha512.hpp

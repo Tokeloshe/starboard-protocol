@@ -10,6 +10,52 @@ begins at publication.
 
 ---
 
+## v0.5.1 (unreleased draft) — "pre-publication audit"
+
+A full-code review before the first public release; every finding fixed,
+mirrored into the C99 port, and re-verified. **No pinned bit changed**: the
+golden `--bits` transcript and all SB-C2 anchors are untouched.
+
+### Verdict-path semantics
+- **Linear kernel out-of-window branch** (`geometry.hpp`, DESIGN §4.2a): a
+  TCA in the past *or beyond the horizon* is now assessed at the current
+  separation — the earlier draft silently dropped an approaching pair
+  already inside the screening bubble whose TCA lay past the horizon.
+- **Orbital-search inside-bubble fallback** (`screening.hpp`): the matching
+  fix for the bounded-arc search, plus a first-sample clamp for arcs
+  shorter than one grid step, and an incremental grid march (bit-identical,
+  ~16× cheaper).
+- **PSD repair** (`covariance.hpp`, DESIGN §4.4): a malformed or hostile
+  covariance with `c² > a·b` no longer drives Pc to NaN — which compared
+  false against `PC_ACTIONABLE` and silently *disabled* the actionability
+  gate. Canonical repair: drop the correlation.
+
+### Maneuver & multi-body
+- **Pc-only actionability plans a burn** (`maneuver.hpp`, DESIGN §6.4):
+  previously a conjunction actionable on Pc alone (miss already at target)
+  planned nothing and the risk was never mitigated.
+- **Theorem 2 restored in counter-rotating head-on** (`maneuver.hpp`): the
+  degenerate zero-miss push direction is now the pinned perpendicular of
+  the *shared* encounter axis, signed by canonical pair order — an
+  own-frame cross-track direction failed to oppose when the two Hill frames
+  are mirrored.
+- **Advisory verdicts record no locks** (`multibody.hpp`, DESIGN §7.3): an
+  unverifiable derelict could acquire a give-way lock and "absorb" a real
+  conjunction via the cascade. Malformed windows (out-of-range or
+  self-paired indices) are rejected before anything is indexed.
+
+### API & hygiene
+- `evaluate()` dropped its unused `Conjunction` parameter: the verdict
+  consumes descriptors + epoch only (the conjunction gates *whether* it
+  runs).
+- Runtime FP-contraction self-check (`arithmetic_profile_ok()`, DESIGN
+  §3.5); the conformance runner and C99 transcript binary refuse to start
+  if it fails.
+- Shared test scaffolding deduplicated into `conformance/support.hpp`;
+  SB-007 rebuilt on physically-screened three-body geometry; SB-014 now
+  also covers the two-impulse CW return; `bitcheck.sh --pin` refuses to pin
+  from a build that fails its own conformance vectors.
+
 ## v0.5 (unreleased draft) — "canonical reference"
 
 The arc from an impressive first draft to a field-defining reference:

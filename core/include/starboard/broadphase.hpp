@@ -92,19 +92,16 @@ inline uint32_t radial_band_pairs(const CraftState* objs, uint32_t n,
     uint32_t n_active = 0u;
     for (uint32_t j = 0u; j < n; ++j) {
         const double lo_j = bands[j].lo;
-        // Purge expired actives (compact in place).
+        const uint32_t ib = bands[j].idx;
+        // Single pass: purge expired actives (compact in place) and emit a
+        // pair for every survivor — each survivor overlaps band j.
         uint32_t w = 0u;
         for (uint32_t s = 0u; s < n_active; ++s) {
-            if (bands[active[s]].hi >= lo_j) {
-                active[w] = active[s];
-                ++w;
-            }
-        }
-        n_active = w;
-        // Every surviving active overlaps band j ⇒ emit the pair.
-        for (uint32_t s = 0u; s < n_active; ++s) {
-            const uint32_t ia = bands[active[s]].idx;
-            const uint32_t ib = bands[j].idx;
+            const uint32_t a = active[s];
+            if (bands[a].hi < lo_j) { continue; }
+            active[w] = a;
+            ++w;
+            const uint32_t ia = bands[a].idx;
             if (count >= cap) {
                 if (overflow != nullptr) { *overflow = true; }
                 return count;
@@ -113,6 +110,7 @@ inline uint32_t radial_band_pairs(const CraftState* objs, uint32_t n,
             out[count].j = (ia < ib) ? ib : ia;
             ++count;
         }
+        n_active = w;
         active[n_active] = j;
         ++n_active;
     }
