@@ -80,6 +80,7 @@ starboard-protocol/
 │   ├── PROTOCOL.md        Layer-2 wire format & handshake
 │   ├── REGISTRY.md        Keys, Merkle log, revocation — the offline trust chain
 │   ├── CONFORMANCE.md     What "Starboard Certified™" means, precisely
+│   ├── OPEN-PROBLEMS.md   Honest ledger of what SB/1 does not yet settle
 │   └── STRATEGY.md        Market, IP & licensing — incl. "why forking loses"
 ├── core/include/starboard/   Header-only C++17 reference implementation
 │   ├── canon.hpp          Canonical constants, lattice, pinned exp/sincos
@@ -126,7 +127,8 @@ that make the protocol safe make it unforkable.
 
 Early. Private while the specification and IP position are established.
 Ruleset SB/1 (spec v0.5 draft) is implemented, proven, and
-conformance-tested; `docs/DESIGN.md` Appendix B records the revision history.
+conformance-tested; `docs/DESIGN.md` Appendix B records the revision history,
+and `docs/OPEN-PROBLEMS.md` is an honest ledger of the remaining edges.
 
 ## License
 
