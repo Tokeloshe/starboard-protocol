@@ -1,81 +1,147 @@
 # Starboard — Wire Protocol (Layer 2 handshake)
 
-*Draft v0.1. The handshake is **optional** — Layers 0 and 1 are correct with no
-communication. This layer only confirms and optimizes when a link exists.*
+**Protocol v0.2 (draft) · for ruleset SB/1 (`RULESET_ID 0x53420001`)**
 
-## Design principles
+*The handshake is **optional** — Layers 0/1 are correct with no
+communication (DESIGN.md Theorem 1). This layer confirms, cross-checks, and
+optimizes when a link exists. The key words MUST/SHOULD/MAY are RFC 2119.*
 
-- **Tiny.** Messages fit in a single CCSDS-style frame; usable over a
-  constrained inter-satellite link or a shared ground provider's relay.
-- **Idempotent.** Re-sending a message never changes the outcome.
-- **Advisory, never authoritative.** If a message contradicts the deterministic
-  Layer-1 verdict, the verdict wins and the discrepancy is logged.
+## 1. Design principles
 
-## Messages
+- **Tiny.** Every message fits one CCSDS-class frame; usable over a
+  constrained inter-satellite link or a shared ground relay.
+- **Idempotent.** Re-delivery, reordering, or duplication of any message
+  never changes an outcome.
+- **Advisory, never authoritative.** A message that contradicts the
+  deterministic Layer-1 verdict is a logged **dispute**, not an override.
+  If Layer 2 and Layer 1 ever disagree, Layer 1 wins and both craft flag
+  the event for the conformance log (this is how implementation drift in
+  the wild gets caught).
 
-All messages share an 8-field header, then a typed body. Field encoding is
-CBOR (compact, schema-free) in the reference; a fixed binary layout is defined
-in Appendix A for flight software that cannot afford a CBOR codec.
+## 2. Header
+
+All messages carry the same header, then a typed body. The reference
+encoding is the fixed binary layout of Appendix A (little-endian, no
+padding); CBOR MAY be used on links that already carry CBOR, but the fixed
+layout is the conformance-tested profile.
 
 ```
 Header {
-  version      u8      // = 1
-  msg_type     u8      // 1=INTENT, 2=ACK, 3=CLEAR
-  conj_id      u64     // deterministic conjunction id = hash(min(idA,idB), max(idA,idB), TCA_epoch)
-  sender_id    str     // canonical COSPAR/NORAD id
-  receiver_id  str
-  t_ca_epoch   u64     // TCA as GPS epoch ms (both derive the same value)
-  sent_epoch   u64
-  sig          bytes   // optional signature over the header+body (capability trust)
+  version      u8        // = 2
+  msg_type     u8        // 1=INTENT, 2=ACK, 3=CLEAR
+  ruleset_id   u32       // MUST equal 0x53420001 for SB/1
+  conj_id      u64       // Appendix B — both craft derive it independently
+  sender_id    char[12]  // canonical id (DESIGN.md §3.2)
+  receiver_id  char[12]
+  tca_epoch_ms u64       // shared TCA epoch (bit-identical on both craft)
+  sent_epoch_ms u64
 }
 ```
 
-### INTENT  (give-way craft → stand-on craft)
+A receiver MUST discard (and SHOULD log) any message whose `ruleset_id`
+differs from its own: different rules means the parties do not even agree
+on what the encounter is called, let alone who gives way.
+
+## 3. Messages
+
+### 3.1 INTENT — give-way craft → stand-on craft
+
 ```
 INTENT {
-  give_way_id   str     // who is maneuvering (must equal Layer-1 verdict)
-  deciding_rule u8      // 1..5, for cross-check
-  delta_v_mps   [f32;3] // planned burn in the craft body frame
-  burn_epoch    u64
-}
-```
-Stand-on craft cross-checks `give_way_id`/`deciding_rule` against its own
-Layer-1 result. Match → `ACK`. Mismatch → `ACK` with `dispute=true` and both
-fall back to the deterministic tuple; the event is flagged for the conformance
-log.
-
-### ACK  (stand-on craft → give-way craft)
-```
-ACK {
-  agree     bool
-  dispute   bool     // true if the stand-on craft computed a different verdict
+  give_way_id   char[12] // MUST equal the sender's Layer-1 verdict
+  deciding_rule u8       // 1..6 (DESIGN.md §5.3) for cross-check
+  advisory      u8       // 1 if the verdict was advisory (nobody trusted)
+  dv_mps        f32[3]   // planned burn, sender's Hill frame (§3.1 frames)
+  burn_epoch_ms u64
 }
 ```
 
-### CLEAR  (give-way craft → stand-on craft)
+The stand-on craft cross-checks `give_way_id` and `deciding_rule` against
+its own Layer-1 result. Match → `ACK{agree=1}`. Mismatch → `ACK{agree=1,
+dispute=1}`: **both craft still act on their own deterministic verdicts**
+(Theorem 2 makes the both-maneuver worst case safe), and the dispute is
+flagged for the conformance log — a disagreement between two certified
+stacks is, by Theorem 1, evidence that one of them is out of conformance.
+
+### 3.2 ACK — stand-on craft → give-way craft
+
+```
+ACK { agree u8; dispute u8; }
+```
+
+### 3.3 CLEAR — give-way craft → stand-on craft
+
 ```
 CLEAR {
-  achieved_miss_m f32   // realized miss distance after the maneuver
-  returning       bool  // true once Layer-3 return-to-slot begins
+  achieved_miss_m f32   // realized separation at TCA
+  returning       u8    // 1 once the mirror+phase return has begun
 }
 ```
 
-## State machine (give-way craft)
+## 4. State machines
 
 ```
- SCREEN ──conjunction──▶ DECIDE ──I give way──▶ SEND_INTENT ──ACK──▶ MANEUVER
-   ▲                       │                                            │
-   │                    I stand on                                      ▼
-   └──────────────────── HOLD ◀──────────────── RETURN_TO_SLOT ◀──── SEND_CLEAR
+ give-way craft:
+ SCREEN ──actionable──▶ DECIDE ──I give way──▶ [SEND INTENT] ──▶ BURN
+    ▲                     │                                        │
+    │                 I stand on                              TCA passes
+    │                     ▼                                        ▼
+    └───────────────── HOLD ◀── in slot ── RETURN(mirror+phase) ◀─ [SEND CLEAR]
+
+ stand-on craft:
+ SCREEN ──actionable──▶ DECIDE ──I stand on──▶ HOLD (predictably)
+                                                │  on INTENT: verify, ACK
+                                                ▼  on CLEAR or TCA+margin:
+                                              resume normal ops
 ```
 
-The stand-on craft's machine is trivial: on `INTENT` it verifies, `ACK`s, and
-holds its orbit until `CLEAR` (or TCA + margin) — predictability is its job.
+Timeouts: a give-way craft that receives no ACK proceeds anyway (the link
+was optional). A stand-on craft that receives no CLEAR by `TCA + 2·
+TCA_BUCKET` treats the window as closed.
+
+## 5. Security
+
+Messages SHOULD be signed (Ed25519 over header‖body, 64 bytes appended)
+with the sender's registry key — the same key that signs capability
+assertions (DESIGN.md §8.2). Unsigned traffic is processed but its
+`dispute`/`advisory` claims are treated at ASSERTED trust. A forged INTENT
+cannot redirect anyone: the receiver acts on its own verdict regardless
+(§3.1), so the worst a forger achieves is a logged dispute under someone
+else's identity — which the signature requirement then removes.
 
 ## Appendix A — fixed binary layout (flight profile)
-`TODO(v0.2)`: byte-exact little-endian layout for MCU targets without a CBOR
-library. Fixed 24-byte header + fixed-width 10-char ids.
 
-## Appendix B — conjunction id
-`conj_id = FNV-1a-64( sorted(idA,idB) ‖ round(t_ca_epoch, 1s) )` so both craft
-independently derive the same id without exchanging it first.
+Little-endian, packed, no alignment padding. Sizes in bytes.
+
+| Offset | Field | Size |
+|---|---|---|
+| 0  | version | 1 |
+| 1  | msg_type | 1 |
+| 2  | ruleset_id | 4 |
+| 6  | conj_id | 8 |
+| 14 | sender_id | 12 |
+| 26 | receiver_id | 12 |
+| 38 | tca_epoch_ms | 8 |
+| 46 | sent_epoch_ms | 8 |
+| 54 | body (below) | — |
+
+Bodies: INTENT = give_way_id(12) ‖ deciding_rule(1) ‖ advisory(1) ‖
+dv_mps(3×f32 LE) ‖ burn_epoch_ms(8) = 34 B → 88 B total.
+ACK = agree(1) ‖ dispute(1) = 2 B → 56 B. CLEAR = achieved_miss_m(f32) ‖
+returning(1) = 5 B → 59 B. Optional signature: +64 B trailer. Every message
+fits comfortably in a 128-byte frame.
+
+## Appendix B — conjunction id (normative)
+
+```
+conj_id = FNV-1a-64( lo_id[12] ‖ hi_id[12] ‖
+                     LE64(tca_epoch_ms / 16384) ‖ LE32(RULESET_ID) )
+```
+
+with offset basis 14695981039346656037 and prime 1099511628211, `lo`/`hi`
+by canonical id order. Both craft derive the same id without exchanging it:
+`tca_epoch_ms` is computed from lattice-quantized shared inputs and is
+therefore bit-identical on both sides (DESIGN.md §3.4–§3.5); the 2¹⁴ ms
+bucket additionally keeps the id stable across small catalog refreshes. An
+id remains valid while the recomputed TCA stays within ±2 buckets
+(hysteresis); beyond that it is a new conjunction.

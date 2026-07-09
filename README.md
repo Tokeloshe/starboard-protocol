@@ -2,96 +2,118 @@
 
 **The Rules of the Orbital Road.**
 
-An open, deterministic protocol that lets any two satellites — even from rival
-operators, even with no radio contact — independently agree on *who gives way*
-before a close approach, execute the avoidance, and then flock back to their
-assigned slots. No ground station. No human in the loop. No emails between
-operators.
+An open, deterministic protocol that lets any two satellites — rival
+operators, no radio contact, no ground station, no human in the loop —
+independently compute the **same** answer for *who gives way* before a close
+approach, execute a minimum-Δv avoidance, and flock back to their assigned
+slots.
 
-At sea this problem was solved 150 years ago. When two vessels cross, the one
-that has the other on its **starboard** side gives way, alters course to
-starboard, and passes behind. Both skippers compute the same answer from the
-same geometry — no negotiation required. That single elegant convention (COLREGS)
-is why millions of ships share the water without a central traffic controller.
+At sea this was solved 150 years ago: when two vessels cross, the one that
+has the other to **starboard** gives way. Both skippers compute the same
+answer from the same geometry — no negotiation. That single convention
+(COLREGS) is why millions of ships share the water without a traffic
+controller. Low Earth orbit — ~10,000 active satellites today, credible
+plans for 100,000+ — still resolves cross-operator conjunctions by *email*.
+Starboard is the missing convention.
 
-Low Earth orbit has no such convention. There are ~10,000 active satellites
-today and credible plans for 100,000+ (Starlink, Kuiper, Guowang, and the new
-wave of orbital data-centre constellations). Collision avoidance today is done
-by each operator privately, with cross-operator conflicts resolved by *email*.
-That does not scale. Starboard is the missing convention.
+## What makes it more than a good idea
 
----
+The protocol is built so its central promise is **provable, testable, and
+unforkable**:
 
-## What Starboard is
+- **Theorem 1 (agreement).** Every pairwise computation runs on the
+  id-ordered pair — the *Canonical Pair Transform* — so
+  `evaluate(A,B) = evaluate(B,A)` by construction, in every geometry,
+  including degenerate ones. The rule chain is total: five rules, each
+  decides or falls through, ending in a fair coin that is deterministic yet
+  50/50 over repeated encounters (nobody is systematically the fuel-payer).
+- **Determinism survives uncertainty.** Screening is covariance-aware
+  probability of collision (encounter-plane Pc via Chan's series at fixed
+  order), formulated trig-free with a power-of-two quantization lattice, a
+  strict IEEE-754 arithmetic profile, and one spec-pinned transcendental —
+  so two independent implementations produce **bit-identical** Pc and
+  verdicts. Cross-vendor bit-agreement is the product.
+- **Theorem 2 (lies are safe).** Unverified claims degrade toward physics:
+  an unverifiable craft is treated as debris and avoided; spoofing can
+  reallocate fuel costs, never safety — even if *both* craft maneuver,
+  their burns oppose by construction and separation grows.
+- **Theorem 3 (reversible maneuvers).** The give-way burn is an analytic
+  minimum-norm impulse in Clohessy-Wiltshire dynamics, undone *exactly* by
+  a mirror+phase return — total campaign cost ≈ Δv·(2 + 2/N), known in
+  advance.
+- **Theorem 4 (multi-body).** 3+ craft windows resolve in a single
+  deterministic pass with role locks — every participant derives the same
+  assignment without a byte exchanged.
+- **Forks self-eject.** The ruleset version is hashed into every
+  conjunction id: a stack that tweaks any rule no longer deconflicts — or
+  even names encounters — consistently with the installed base. The
+  conformance suite gives "compatible" a precise, owned, testable
+  definition. See `docs/DESIGN.md` §11.
 
-1. **A ruleset** — "the Rules of the Orbital Road." A small, fully deterministic
-   set of right-of-way rules. Given a predicted conjunction, both satellites
-   compute the *identical* answer for who gives way, with zero communication.
+## See it run
 
-2. **A negotiation handshake** — an optional, lightweight message exchange for
-   when the two craft *can* talk (shared ground provider, inter-satellite link),
-   to confirm intent and de-conflict maneuver magnitude.
+```
+cmake -B build && cmake --build build
+./build/starboard_crossing_demo     # two rivals agree with zero comms,
+                                    # then a 3-body window with a derelict
+ctest --test-dir build              # the conformance suite (SB-001..012)
+```
 
-3. **A return-to-slot behaviour** — after giving way, a minimum-energy return to
-   assigned station, so a constellation behaves like a flock of birds: perturbed
-   by a threat, then settling back into formation in unison.
-
-4. **A reference implementation** — portable, dependency-free C++ (this repo),
-   built on flight-proven orbital-mechanics and formation-control code.
-
-## Why it becomes integral
-
-- **Interoperability standard, not a product.** The value is that *everyone*
-  runs the same rules. Like TCP/IP, a partially-adopted standard is worth little
-  and a widely-adopted one is worth everything — adoption is the moat.
-- **Regulator tailwind.** The FCC, ESA and UN COPUOS are all pushing toward
-  automated, coordinated conjunction management. A neutral open standard is what
-  they want to point to.
-- **Insurer / launch-license leverage.** "Starboard-compliant" becomes a checkbox
-  that lowers premiums and eases licensing — a soft mandate that pulls adoption.
-
-## How the author is paid — forever
-
-Starboard uses an **open-core / dual-license** model (see
-[`docs/STRATEGY.md`](docs/STRATEGY.md)):
-
-- The specification is open and free, so it can become *the* standard.
-- The reference implementation is **AGPL-3.0**. Anyone may use it — but flight
-  and commercial ground software that doesn't want AGPL's source-disclosure
-  obligation must buy a **commercial license** from the author.
-- The **`Starboard Certified™`** trademark + conformance test suite is licensed
-  per-constellation, renewably.
-
-This is the same mechanism that pays the authors of Qt, MongoDB and BusyBox.
-Adoption of the *standard* drives demand for the *license*.
+The demo prints the full timeline: independent screening with identical Pc
+bits, independent identical verdicts, the min-Δv Hill-frame burn (with the
+naive-impulse comparison), safe TCA passage, and the exact return to slot.
 
 ## Repository layout
 
 ```
 starboard-protocol/
-├── README.md              You are here
 ├── docs/
-│   ├── STRATEGY.md        Market, IP & licensing — the business case
-│   ├── DESIGN.md          The Rules of the Orbital Road, in full
-│   └── PROTOCOL.md        Wire format & the negotiation handshake
-├── core/                  Reference implementation (C++17, no deps)
-│   ├── include/starboard/
-│   │   ├── geometry.hpp   Vec3 + conjunction geometry (TCA, miss distance)
-│   │   └── rules.hpp      The deterministic give-way ruleset
-│   └── src/rules.cpp
-├── examples/
-│   └── crossing_demo.cpp  Two rival-operator sats de-conflict a crossing
+│   ├── DESIGN.md          The specification: rules, theorems, constants (normative)
+│   ├── PROTOCOL.md        Layer-2 wire format & handshake
+│   ├── CONFORMANCE.md     What "Starboard Certified™" means, precisely
+│   └── STRATEGY.md        Market, IP & licensing — incl. "why forking loses"
+├── core/include/starboard/   Header-only C++17 reference implementation
+│   ├── canon.hpp          Canonical constants, lattice, pinned exp
+│   ├── id.hpp             Canonical identity (root of the pair transform)
+│   ├── geometry.hpp       Layer 0: screening
+│   ├── covariance.hpp     Layer 0: Starboard-Pc
+│   ├── rules.hpp          Layer 1: the Rules of the Orbital Road
+│   ├── trust.hpp          Adversarial model: assertions & downgrades
+│   ├── frames.hpp         Hill frame, Clohessy-Wiltshire dynamics
+│   ├── maneuver.hpp       Min-Δv give-way, mirror+phase return
+│   └── multibody.hpp      Multi-craft window resolution
+├── conformance/runner.cpp Conformance vectors SB-001..SB-012 (normative)
+├── examples/crossing_demo.cpp
 └── CMakeLists.txt
 ```
 
+The core is header-only, dependency-free, allocation-free, exception-free,
+and avoids every source of cross-platform float nondeterminism on the
+verdict path — written to be portable to a radiation-hardened flight MCU.
+
+## How the author is paid — forever
+
+Open-core / dual-license (see `docs/STRATEGY.md`):
+
+- The **specification** is free (CC BY 4.0) — that's how it becomes *the*
+  standard.
+- The **reference implementation** is AGPL-3.0; commercial flight/ground
+  software buys a per-fleet commercial license (`COMMERCIAL-LICENSE.md`).
+- The **`Starboard Certified™`** mark + conformance suite is licensed
+  per-constellation, renewably — and it is the enforcement layer that makes
+  "compatible" mean something.
+
+Adoption of the standard drives demand for the license. The same properties
+that make the protocol safe make it unforkable.
+
 ## Status
 
-Early. This repo is **private** while the specification and IP position are
-established. Design and strategy first; reference code seeded from the SolarLens
-formation-control and orbital-mechanics modules.
+Early. Private while the specification and IP position are established.
+Ruleset SB/1 is implemented, proven, and conformance-tested;
+`docs/DESIGN.md` Appendix B records everything that changed from v0.1.
 
 ## License
 
-Reference implementation: **AGPL-3.0-or-later** (see [`LICENSE`](LICENSE)).
-Commercial licensing: see [`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md).
-Specification text: CC BY 4.0.
+Reference implementation: **AGPL-3.0-or-later** (`LICENSE`), commercial
+licensing available (`COMMERCIAL-LICENSE.md`). Specification text
+(`docs/`): **CC BY 4.0**. No outside contributions without a CLA.
