@@ -680,7 +680,7 @@ are off-network at the identifier layer, before any verdict is compared.
 
 The conformance suite (`conformance/`, [`CONFORMANCE.md`](CONFORMANCE.md))
 is the operational definition of "Starboard compatible": SB-C1 (verdict
-conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…018,
+conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…019,
 covering every rule, every degenerate geometry, the trust downgrades, the
 3-body cascade, the end-to-end orbital search, the crypto stack, and the
 Theorem 1/2 properties directly. SB-C2's evidence artifact is the `--bits`

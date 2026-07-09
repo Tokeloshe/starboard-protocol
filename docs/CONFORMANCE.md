@@ -73,6 +73,7 @@ within 1 m. This is the level a certification engagement actually runs.
 | SB-016 | Ed25519 verify | RFC 8032 §7.1 vectors + tamper/zero-key/non-canonical-S rejects |
 | SB-017 | registry pipeline | libsodium-signed fixtures: VERIFIED, and every downgrade path |
 | SB-018 | Merkle log | C++ root == independent (Python) root; proofs verify; corruption fails |
+| SB-019 | snapshot freshness | stale (pre-revocation) and future-dated snapshots rejected; boundary exact |
 
 Inputs are defined in `conformance/runner.cpp` (the runner is normative:
 its scenario constants ARE the vectors; SB-017/018 fixtures are generated

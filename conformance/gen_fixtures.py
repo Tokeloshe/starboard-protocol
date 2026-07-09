@@ -147,6 +147,10 @@ A_OK = make_assertion("2026-001A", 1, True, T0 - DAY, T0 + DAY, op_acme)
 A_REVOKED = make_assertion("1998-067X", 1, False, T0 - DAY, T0 + DAY, op_dead)
 A_EXPIRED = make_assertion("2026-044B", 1, True, T0 - 3 * DAY, T0 - DAY,
                            op_orbx)
+# Long-window assertion: still valid 400 days out, so SB-019 can isolate
+# SNAPSHOT staleness (the snapshot epoch is T0-DAY) from assertion expiry.
+A_LONG = make_assertion("2026-001A", 1, True, T0 - DAY, T0 + 800 * DAY,
+                        op_acme)
 
 # --- emit the header ------------------------------------------------------------
 def hexs(b: bytes) -> str:
@@ -216,4 +220,6 @@ def emit_assertion(name, a):
 emit_assertion("ASSERT_OK", A_OK)
 emit_assertion("ASSERT_REVOKED", A_REVOKED)
 emit_assertion("ASSERT_EXPIRED", A_EXPIRED)
+emit_assertion("ASSERT_LONG", A_LONG)
+print(f"inline const uint64_t SNAPSHOT_EPOCH_MS = {T0 - DAY}ull;")
 print("} // namespace fixtures")

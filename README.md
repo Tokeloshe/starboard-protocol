@@ -62,7 +62,7 @@ unforkable**:
 cmake -B build && cmake --build build
 ./build/starboard_crossing_demo     # two rivals agree with zero comms,
                                     # then a 3-body window with a derelict
-ctest --test-dir build              # the conformance suite (SB-001..012)
+ctest --test-dir build              # the conformance suite (SB-001..019)
 ```
 
 The demo prints the full timeline: independent screening with identical Pc

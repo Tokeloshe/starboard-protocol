@@ -643,6 +643,47 @@ void sb017() {
 }
 
 // ---------------------------------------------------------------------------
+// SB-019  snapshot freshness: a validly-signed but STALE snapshot is
+//         rejected (else its stale revocation list would un-revoke a key),
+//         and a future-dated snapshot is rejected (rollback/clock skew).
+//         Uses the long-window assertion so this isolates SNAPSHOT age from
+//         assertion expiry.
+// ---------------------------------------------------------------------------
+void sb019() {
+    using registry::establish_trust;
+    const auto trust_at = [](const CapabilityAssertion& a, uint64_t now,
+                             uint64_t max_age) {
+        return establish_trust(a, fixtures::ENTRIES[0], fixtures::PROOFS[0],
+                               fixtures::SNAPSHOT, fixtures::REVOKED_IDS, 1u,
+                               fixtures::REG_PUB, now, max_age);
+    };
+    const uint64_t day = 86400000ull;
+    // Fresh: snapshot 1 day old, 30-day bound, assertion still valid.
+    const bool fresh_ok =
+        trust_at(fixtures::ASSERT_LONG, fixtures::NOW_MS,
+                 registry::SNAPSHOT_MAX_AGE_MS) == TrustLevel::VERIFIED;
+    // Stale: same snapshot evaluated 400 days later — assertion still in
+    // window, but the snapshot is far past the 30-day bound.
+    const bool stale_rejected =
+        trust_at(fixtures::ASSERT_LONG, fixtures::SNAPSHOT_EPOCH_MS + 400 * day,
+                 registry::SNAPSHOT_MAX_AGE_MS) == TrustLevel::ASSERTED;
+    // Future-dated snapshot (now before its epoch) rejected.
+    const bool future_rejected =
+        trust_at(fixtures::ASSERT_LONG, fixtures::SNAPSHOT_EPOCH_MS - day,
+                 registry::SNAPSHOT_MAX_AGE_MS) == TrustLevel::ASSERTED;
+    // Exactly at the bound is still accepted; one ms past is not.
+    const bool boundary_ok =
+        (trust_at(fixtures::ASSERT_LONG,
+                  fixtures::SNAPSHOT_EPOCH_MS + registry::SNAPSHOT_MAX_AGE_MS,
+                  registry::SNAPSHOT_MAX_AGE_MS) == TrustLevel::VERIFIED) &&
+        (trust_at(fixtures::ASSERT_LONG,
+                  fixtures::SNAPSHOT_EPOCH_MS + registry::SNAPSHOT_MAX_AGE_MS + 1,
+                  registry::SNAPSHOT_MAX_AGE_MS) == TrustLevel::ASSERTED);
+    report("SB-019", "snapshot freshness: stale/future rejected",
+           fresh_ok && stale_rejected && future_rejected && boundary_ok);
+}
+
+// ---------------------------------------------------------------------------
 // SB-018  Merkle log: C++ root reproduces the (Python-signed) snapshot root;
 //         all inclusion proofs verify; corruption fails.
 // ---------------------------------------------------------------------------
@@ -842,6 +883,7 @@ int main(int argc, char** argv) {
     sb016();
     sb017();
     sb018();
+    sb019();
     std::printf("\n%s (%d failure%s)\n",
                 (g_failures == 0) ? "SB-C1 + SB-C2 vectors: ALL PASS"
                                   : "CONFORMANCE FAILED",

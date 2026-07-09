@@ -61,6 +61,19 @@ craft MAY hold different snapshot epochs; a verdict never depends on the
 counterpart's snapshot (each side verifies independently, and divergence is
 bounded by Theorem 2 exactly like every other trust divergence).
 
+**Freshness is mandatory (not optional).** A snapshot's signature attests
+only that the registry *once* published that state — a validly-signed but
+stale snapshot carries a stale *revocation list*, so accepting one lets an
+adversary replay a pre-revocation snapshot to un-revoke a key. Therefore a
+verifier MUST reject a snapshot that is dated in the future (`now <
+epoch`, i.e. clock skew or rollback) or older than a freshness bound
+`SNAPSHOT_MAX_AGE_MS` (default 30 days; operators SHOULD set it to a small
+multiple of their refresh cadence). Beyond the bound the counterpart
+degrades to ASSERTED — conservative, never trusted. Craft that can retain
+state SHOULD additionally track the highest snapshot epoch they have
+accepted and refuse older ones (monotonic rollback protection); the age
+bound is the stateless floor that every craft enforces.
+
 ## 4. Revocation
 
 Revocation is **current-state, not log-history**: the full list of revoked
@@ -90,6 +103,15 @@ can never be replayed as another:
 | snapshot payload | `STARBOARD:REG/1` | log_size(8) ‖ root(64) ‖ revocation_root(64) ‖ epoch_ms(8) ‖ registry_key_id(8) | 167 B |
 | revocation list | `STARBOARD:REV/1` | count(8) ‖ key_id(8)×count | — |
 
+The `revocation_root` hash is order-sensitive; the registry MUST ship (and
+sign over) the list in ascending `key_id` order so independent auditors
+reproduce the root. A verifier need not re-sort — it hashes the shipped
+list and compares to the signed root — but a non-canonical order is a
+registry conformance defect. `key_id` is an 8-byte fingerprint used only
+for lookup; a fingerprint collision is harmless because the assertion
+signature is verified under the *full* public key from the log entry, not
+under the fingerprint.
+
 Assertions carry an explicit validity window `[epoch_ms, expiry_ms]` and
 MUST be re-issued per mission phase; a craft MUST NOT honor an assertion
 outside its window (stale "cannot maneuver" claims age out by themselves).
@@ -101,6 +123,9 @@ failure returns ASSERTED**, never an error: a broken proof chain simply
 means the counterpart is handled as debris (SPEC §8.3). The pipeline:
 
 1. snapshot signature valid under the on-board registry root key;
+1a. snapshot **fresh**: `epoch ≤ now ≤ epoch + SNAPSHOT_MAX_AGE_MS`
+   (rejects future-dated and stale snapshots — the check that makes
+   revocation binding, above);
 2. shipped revocation list matches `revocation_root`; asserting key not on it;
 3. entry binds this `object_id` to this `key_id`, is in force
    (`not_before`), and its leaf is included in the signed root;
@@ -133,7 +158,8 @@ hash in this document.
 | Spoof "cannot maneuver" without a key | ASSERTED → treated as debris; attacker gains a berth, loses nothing else; no safety impact |
 | Spoof with a *signed* assertion | attributable evidence against a registry identity → revocation (§4) |
 | Replay an old assertion | validity window (§5) bounds it; expired → ASSERTED |
-| Replay a revoked operator's old entry+proof | current-state revocation list (§4) catches it before the proof is even checked |
+| Replay a revoked operator's old entry+proof (with a *current* snapshot) | current-state revocation list (§4) catches it before the proof is even checked |
+| Replay a *pre-revocation snapshot* (stale revocation list) | snapshot freshness bound (§3, step 1a) rejects it once past `SNAPSHOT_MAX_AGE_MS` → ASSERTED; monotonic epoch tracking closes the window entirely for stateful craft |
 | Strip or trim the revocation list | snapshot signature fails → everything ASSERTED (conservative) |
 | Forge/alter a snapshot | Ed25519 under the root key; fails → ASSERTED |
 | Cross-protocol signature replay | domain separation (§5) |

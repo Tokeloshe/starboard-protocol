@@ -39,6 +39,14 @@ namespace registry {
 constexpr uint32_t PROOF_MAX_DEPTH = 64u;
 constexpr uint32_t HASH_BYTES = 64u;
 
+// Snapshot freshness bound (REGISTRY.md §6). A validly-signed but STALE
+// snapshot carries a stale revocation list; without an age bound an
+// adversary could replay a pre-revocation snapshot to un-revoke a key
+// (the revocation check would consult the old, shorter list). The default
+// is 30 days; operators SHOULD refresh on catalog cadence and MAY tighten
+// it. Rollback beyond this bound degrades to ASSERTED, never to trust.
+constexpr uint64_t SNAPSHOT_MAX_AGE_MS = 2592000000ull;   // 30 days
+
 // Domain-separation prefixes (15 ASCII bytes each, pinned — REGISTRY.md §5).
 // Distinct prefixes mean a signature over one structure can never be
 // replayed as a signature over another.
@@ -307,12 +315,21 @@ inline TrustLevel establish_trust(const CapabilityAssertion& assertion,
                                   const uint8_t (*revoked_key_ids)[8],
                                   uint32_t revoked_count,
                                   const uint8_t registry_public_key[32],
-                                  uint64_t now_ms) {
+                                  uint64_t now_ms,
+                                  uint64_t max_snapshot_age_ms =
+                                      SNAPSHOT_MAX_AGE_MS) {
     // 1. The snapshot is authentic (signed by the on-board registry key).
     uint8_t snap_payload[SNAPSHOT_BYTES];
     const uint32_t sn = encode_snapshot(snapshot, snap_payload);
     if (!crypto::ed25519_verify(snapshot.signature, snap_payload, sn,
                                 registry_public_key)) {
+        return TrustLevel::ASSERTED;
+    }
+    // 1a. The snapshot is FRESH: not from the future (clock skew / rollback)
+    //     and not older than the freshness bound. A stale snapshot carries a
+    //     stale revocation list, so this is what makes revocation binding.
+    if (now_ms < snapshot.epoch_ms) { return TrustLevel::ASSERTED; }
+    if ((now_ms - snapshot.epoch_ms) > max_snapshot_age_ms) {
         return TrustLevel::ASSERTED;
     }
     // 2. The shipped revocation list is the one the snapshot pinned, and the
