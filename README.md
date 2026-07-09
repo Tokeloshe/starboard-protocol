@@ -27,16 +27,22 @@ unforkable**:
   including degenerate ones. The rule chain is total: five rules, each
   decides or falls through, ending in a fair coin that is deterministic yet
   50/50 over repeated encounters (nobody is systematically the fuel-payer).
-- **Determinism survives uncertainty.** Screening is covariance-aware
-  probability of collision (encounter-plane Pc via Chan's series at fixed
-  order), formulated trig-free with a power-of-two quantization lattice, a
-  strict IEEE-754 arithmetic profile, and one spec-pinned transcendental —
-  so two independent implementations produce **bit-identical** Pc and
-  verdicts. Cross-vendor bit-agreement is the product.
+- **Determinism survives uncertainty.** Conjunctions are *found* by a
+  canonical ephemeris (fixed-iteration Kepler — provably convergent, no
+  data-dependent branching) and assessed as covariance-aware probability
+  of collision (encounter-plane Pc via Chan's series at fixed order),
+  with a power-of-two quantization lattice, a strict IEEE-754 arithmetic
+  profile, and spec-pinned transcendentals — so two independent
+  implementations produce **bit-identical** conjunctions, Pc, and
+  verdicts. Not aspiration: `tools/bitcheck.sh` shows 20/20 compiler ×
+  optimization builds byte-identical across a ~50,000-quantity transcript.
 - **Theorem 2 (lies are safe).** Unverified claims degrade toward physics:
   an unverifiable craft is treated as debris and avoided; spoofing can
   reallocate fuel costs, never safety — even if *both* craft maneuver,
-  their burns oppose by construction and separation grows.
+  their burns oppose by construction and separation grows. Honesty is
+  checkable fully offline: signed capability assertions chain through a
+  Merkle registry log to an on-board root key (`docs/REGISTRY.md`), with
+  verify-only flight crypto — no signing key ever flies.
 - **Theorem 3 (reversible maneuvers).** The give-way burn is an analytic
   minimum-norm impulse in Clohessy-Wiltshire dynamics, undone *exactly* by
   a mirror+phase return — total campaign cost ≈ Δv·(2 + 2/N), known in
@@ -70,19 +76,25 @@ starboard-protocol/
 ├── docs/
 │   ├── DESIGN.md          The specification: rules, theorems, constants (normative)
 │   ├── PROTOCOL.md        Layer-2 wire format & handshake
+│   ├── REGISTRY.md        Keys, Merkle log, revocation — the offline trust chain
 │   ├── CONFORMANCE.md     What "Starboard Certified™" means, precisely
 │   └── STRATEGY.md        Market, IP & licensing — incl. "why forking loses"
 ├── core/include/starboard/   Header-only C++17 reference implementation
-│   ├── canon.hpp          Canonical constants, lattice, pinned exp
+│   ├── canon.hpp          Canonical constants, lattice, pinned exp/sincos
 │   ├── id.hpp             Canonical identity (root of the pair transform)
-│   ├── geometry.hpp       Layer 0: screening
+│   ├── geometry.hpp       Layer 0: encounter kernel
+│   ├── kepler.hpp         Layer 0: canonical two-body ephemeris
+│   ├── screening.hpp      Layer 0: canonical conjunction search
 │   ├── covariance.hpp     Layer 0: Starboard-Pc
 │   ├── rules.hpp          Layer 1: the Rules of the Orbital Road
 │   ├── trust.hpp          Adversarial model: assertions & downgrades
+│   ├── registry.hpp       Offline trust chain (Merkle log, revocation)
+│   ├── crypto/            SHA-512 + Ed25519 (verify-only), dependency-free
 │   ├── frames.hpp         Hill frame, Clohessy-Wiltshire dynamics
 │   ├── maneuver.hpp       Min-Δv give-way, mirror+phase return
 │   └── multibody.hpp      Multi-craft window resolution
-├── conformance/runner.cpp Conformance vectors SB-001..SB-012 (normative)
+├── conformance/           Vectors SB-001..SB-018 + bit transcript (normative)
+├── tools/bitcheck.sh      SB-C2 cross-toolchain bit-agreement matrix
 ├── examples/crossing_demo.cpp
 └── CMakeLists.txt
 ```

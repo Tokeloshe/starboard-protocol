@@ -52,14 +52,16 @@ enum class TrustLevel : uint8_t {
     VERIFIED = 2    // signature checked against the registry key
 };
 
-// A signed capability assertion (SPEC §8.2). The signature covers the
-// canonical little-endian encoding of the first four fields.
+// A signed capability assertion (SPEC §8.2, REGISTRY.md §5). The signature
+// covers the domain-separated canonical encoding (registry.hpp,
+// encode_assertion) under the operator key named by key_id.
 struct CapabilityAssertion {
     ObjectId object_id;
     Tier     tier;
     bool     can_maneuver;
-    uint64_t epoch_ms;        // assertion validity epoch
-    uint8_t  key_id[8];       // registry key fingerprint
+    uint64_t epoch_ms;        // validity window start (GPS ms)
+    uint64_t expiry_ms;       // validity window end — assertions expire
+    uint8_t  key_id[8];       // operator key fingerprint (registry binding)
     uint8_t  signature[64];   // Ed25519 over the canonical bytes
 };
 

@@ -17,6 +17,8 @@
 
 #include "starboard/starboard.hpp"
 
+#include "registry_fixtures.hpp"
+
 #include <cstdio>
 #include <cstring>
 
@@ -482,6 +484,198 @@ void sb014() {
 }
 
 // ---------------------------------------------------------------------------
+// SB-015  SHA-512 against the FIPS 180-2 example vectors.
+// ---------------------------------------------------------------------------
+uint32_t hex_decode(const char* hex, uint8_t* out, uint32_t max) {
+    uint32_t n = 0u;
+    while ((hex[2 * n] != '\0') && (n < max)) {
+        const auto nib = [](char c) -> uint8_t {
+            if ((c >= '0') && (c <= '9')) { return static_cast<uint8_t>(c - '0'); }
+            if ((c >= 'a') && (c <= 'f')) { return static_cast<uint8_t>(c - 'a' + 10); }
+            return static_cast<uint8_t>(c - 'A' + 10);
+        };
+        out[n] = static_cast<uint8_t>((nib(hex[2 * n]) << 4) |
+                                      nib(hex[2 * n + 1]));
+        ++n;
+    }
+    return n;
+}
+
+void sb015() {
+    struct V { const char* msg; const char* digest; };
+    const V vs[3] = {
+        {"abc",
+         "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+         "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f"},
+        {"",
+         "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce"
+         "47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"},
+        {"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmno"
+         "ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+         "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018"
+         "501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909"},
+    };
+    bool ok = true;
+    for (const V& v : vs) {
+        uint8_t want[64], got[64];
+        (void)hex_decode(v.digest, want, 64u);
+        uint64_t len = 0u;
+        while (v.msg[len] != '\0') { ++len; }
+        crypto::sha512(reinterpret_cast<const uint8_t*>(v.msg), len, got);
+        if (std::memcmp(want, got, 64u) != 0) { ok = false; }
+    }
+    report("SB-015", "SHA-512: FIPS 180-2 vectors", ok);
+}
+
+// ---------------------------------------------------------------------------
+// SB-016  Ed25519 verification against RFC 8032 §7.1, plus rejections.
+// ---------------------------------------------------------------------------
+void sb016() {
+    struct V { const char* pub; const char* msg; const char* sig; };
+    const V vs[3] = {
+        {"d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+         "",
+         "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
+         "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"},
+        {"3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+         "72",
+         "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da"
+         "085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00"},
+        {"fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+         "af82",
+         "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac"
+         "18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a"},
+    };
+    bool ok = true;
+    for (const V& v : vs) {
+        uint8_t pub[32], sig[64], msg[8];
+        (void)hex_decode(v.pub, pub, 32u);
+        (void)hex_decode(v.sig, sig, 64u);
+        const uint32_t mlen = hex_decode(v.msg, msg, 8u);
+        if (!crypto::ed25519_verify(sig, msg, mlen, pub)) { ok = false; }
+        uint8_t bad[64];
+        std::memcpy(bad, sig, 64u);
+        bad[0] ^= 1u;
+        if (crypto::ed25519_verify(bad, msg, mlen, pub)) { ok = false; }
+        std::memcpy(bad, sig, 64u);
+        bad[63] ^= 0x40u;
+        if (crypto::ed25519_verify(bad, msg, mlen, pub)) { ok = false; }
+        uint8_t badpub[32];
+        std::memcpy(badpub, pub, 32u);
+        badpub[7] ^= 4u;
+        if (crypto::ed25519_verify(sig, msg, mlen, badpub)) { ok = false; }
+    }
+    // Tampered message must fail.
+    {
+        uint8_t pub[32], sig[64];
+        (void)hex_decode(vs[2].pub, pub, 32u);
+        (void)hex_decode(vs[2].sig, sig, 64u);
+        const uint8_t wrong[2] = {0xAFu, 0x83u};
+        if (crypto::ed25519_verify(sig, wrong, 2u, pub)) { ok = false; }
+    }
+    // All-zero public key and non-canonical S (== L) must be rejected.
+    {
+        uint8_t zero[32] = {0};
+        uint8_t sig[64] = {0};
+        if (crypto::ed25519_verify(sig, nullptr, 0u, zero)) { ok = false; }
+        uint8_t pub[32];
+        (void)hex_decode(vs[0].pub, pub, 32u);
+        uint8_t sl[64] = {0};
+        const uint8_t lbytes[32] = {
+            0xEDu, 0xD3u, 0xF5u, 0x5Cu, 0x1Au, 0x63u, 0x12u, 0x58u,
+            0xD6u, 0x9Cu, 0xF7u, 0xA2u, 0xDEu, 0xF9u, 0xDEu, 0x14u,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x10u};
+        std::memcpy(&sl[32], lbytes, 32u);
+        if (crypto::ed25519_verify(sl, nullptr, 0u, pub)) { ok = false; }
+    }
+    report("SB-016", "Ed25519: RFC 8032 verify + rejects", ok);
+}
+
+// ---------------------------------------------------------------------------
+// SB-017  the registry pipeline (fixtures signed by libsodium — an
+//         INDEPENDENT implementation of REGISTRY.md).
+// ---------------------------------------------------------------------------
+void sb017() {
+    using registry::establish_trust;
+    const auto trust = [](const CapabilityAssertion& a, uint32_t entry_i,
+                          const uint8_t reg_pub[32]) {
+        return establish_trust(a, fixtures::ENTRIES[entry_i],
+                               fixtures::PROOFS[entry_i], fixtures::SNAPSHOT,
+                               fixtures::REVOKED_IDS, 1u, reg_pub,
+                               fixtures::NOW_MS);
+    };
+    const bool ok_verified =
+        trust(fixtures::ASSERT_OK, 0u, fixtures::REG_PUB) ==
+        TrustLevel::VERIFIED;
+    const bool revoked_downgraded =
+        trust(fixtures::ASSERT_REVOKED, 2u, fixtures::REG_PUB) ==
+        TrustLevel::ASSERTED;
+    const bool expired_downgraded =
+        trust(fixtures::ASSERT_EXPIRED, 1u, fixtures::REG_PUB) ==
+        TrustLevel::ASSERTED;
+    CapabilityAssertion tampered = fixtures::ASSERT_OK;
+    tampered.can_maneuver = !tampered.can_maneuver;
+    const bool tamper_downgraded =
+        trust(tampered, 0u, fixtures::REG_PUB) == TrustLevel::ASSERTED;
+    uint8_t bad_reg[32];
+    std::memcpy(bad_reg, fixtures::REG_PUB, 32u);
+    bad_reg[3] ^= 8u;
+    const bool badreg_downgraded =
+        trust(fixtures::ASSERT_OK, 0u, bad_reg) == TrustLevel::ASSERTED;
+    // Wrong entry for the assertion (key binding mismatch) must fail too.
+    const bool wrong_entry_downgraded =
+        establish_trust(fixtures::ASSERT_OK, fixtures::ENTRIES[1],
+                        fixtures::PROOFS[1], fixtures::SNAPSHOT,
+                        fixtures::REVOKED_IDS, 1u, fixtures::REG_PUB,
+                        fixtures::NOW_MS) == TrustLevel::ASSERTED;
+    report("SB-017", "registry pipeline: verify + downgrades",
+           ok_verified && revoked_downgraded && expired_downgraded &&
+           tamper_downgraded && badreg_downgraded && wrong_entry_downgraded);
+}
+
+// ---------------------------------------------------------------------------
+// SB-018  Merkle log: C++ root reproduces the (Python-signed) snapshot root;
+//         all inclusion proofs verify; corruption fails.
+// ---------------------------------------------------------------------------
+void sb018() {
+    using namespace registry;
+    uint8_t leaves[5][HASH_BYTES];
+    for (uint32_t i = 0u; i < 5u; ++i) {
+        leaf_hash(fixtures::ENTRIES[i], leaves[i]);
+    }
+    uint8_t nodes[5][HASH_BYTES];
+    std::memcpy(nodes, leaves, sizeof(nodes));
+    uint8_t root[HASH_BYTES];
+    merkle_root(nodes, 5u, root);
+    const bool cross_impl =
+        (std::memcmp(root, fixtures::SNAPSHOT.root, HASH_BYTES) == 0);
+
+    bool proofs_ok = true;
+    for (uint32_t i = 0u; i < 5u; ++i) {
+        std::memcpy(nodes, leaves, sizeof(nodes));
+        InclusionProof p;
+        if (!merkle_proof(nodes, 5u, i, &p)) { proofs_ok = false; continue; }
+        if (!verify_inclusion(leaves[i], p, 5ull, root)) { proofs_ok = false; }
+        if (!verify_inclusion(leaves[i], fixtures::PROOFS[i], 5ull,
+                              fixtures::SNAPSHOT.root)) {
+            proofs_ok = false;
+        }
+        if (p.depth > 0u) {
+            p.siblings[0][0] ^= 1u;
+            if (verify_inclusion(leaves[i], p, 5ull, root)) {
+                proofs_ok = false;   // corrupted proof must fail
+            }
+        }
+        if (verify_inclusion(leaves[i], fixtures::PROOFS[i],
+                             5ull, fixtures::SNAPSHOT.revocation_root)) {
+            proofs_ok = false;       // wrong root must fail
+        }
+    }
+    report("SB-018", "Merkle log: cross-impl root + proofs",
+           cross_impl && proofs_ok);
+}
+
+// ---------------------------------------------------------------------------
 // --bits: the SB-C2 bit transcript. Emits the bit patterns of every pinned
 // quantity plus FNV-1a fold digests over dense sweeps (thousands of
 // intermediate values each), so ANY arithmetic divergence between two
@@ -590,6 +784,26 @@ void emit_bits() {
     }
     std::printf("verdict-sweep  %016llX\n",
                 static_cast<unsigned long long>(fv.h));
+
+    // Registry stack: fold the Merkle root and a SHA-512 chain (pure integer
+    // arithmetic — divergence here would mean a broken toolchain, but the
+    // transcript should cover the whole stack).
+    Fold fr;
+    uint8_t nodes[5][registry::HASH_BYTES];
+    for (uint32_t i = 0u; i < 5u; ++i) {
+        registry::leaf_hash(fixtures::ENTRIES[i], nodes[i]);
+    }
+    uint8_t rroot[registry::HASH_BYTES];
+    registry::merkle_root(nodes, 5u, rroot);
+    for (uint32_t i = 0u; i < registry::HASH_BYTES; i += 8u) {
+        uint64_t w = 0u;
+        for (uint32_t j = 0u; j < 8u; ++j) {
+            w |= static_cast<uint64_t>(rroot[i + j]) << (8u * j);
+        }
+        fr.add(w);
+    }
+    std::printf("registry       %016llX\n",
+                static_cast<unsigned long long>(fr.h));
 }
 
 } // namespace
@@ -615,6 +829,10 @@ int main(int argc, char** argv) {
     sb012();
     sb013();
     sb014();
+    sb015();
+    sb016();
+    sb017();
+    sb018();
     std::printf("\n%s (%d failure%s)\n",
                 (g_failures == 0) ? "SB-C1 + SB-C2 vectors: ALL PASS"
                                   : "CONFORMANCE FAILED",

@@ -1,6 +1,6 @@
 # Starboard Specification — The Rules of the Orbital Road
 
-**Ruleset SB/1 · Specification v0.2 (draft) · `RULESET_ID = 0x53420001`**
+**Ruleset SB/1 · Specification v0.3 (draft) · `RULESET_ID = 0x53420001`**
 
 *Specification text © 2026 James H, licensed CC BY 4.0. The reference
 implementation in `core/` is dual-licensed AGPL-3.0 / commercial.*
@@ -142,7 +142,11 @@ All conformant implementations MUST use exactly these values
 | `VAR_FLOOR_M2` | plane-covariance eigenfloor | 1 m² |
 | `OVERTAKE_COS` | stern-cone half-angle | 0.3826834323650898 (cos 67.5°) |
 | `EPS_SPEED_MPS` | speed-ordering dead-band | 0.0625 m/s (2⁻⁴) |
-| `EPS_LATERAL_M` | starboard dead-band | 1 m |
+| `EPS_BEARING` | approach-bearing dead-band (sine) | 0.0625 (2⁻⁴, ≈3.6°) |
+| `EPS_LATERAL_M` | co-drift bearing dead-band | 1 m |
+| `SCREEN_STEP_S` | canonical search grid | 32 s (2⁵) |
+| `TCA_BISECT_ITERS` | TCA refinement depth | 48 (fixed) |
+| `KEPLER_BISECT_ITERS` / `_POLISH` | Kepler solver iterations | 48 / 3 (fixed) |
 | `MANEUVER_MARGIN` | κ, burn target κ·R_SAFE | 1.25 |
 | `RETURN_PHASING_ORBITS` | N in mirror+phase return | 2 |
 | `TCA_BUCKET_MS` | conjunction-id time bucket | 16384 ms (2¹⁴) |
@@ -162,22 +166,74 @@ covariances, and combined hard-body radius `R = hbr_A + hbr_B`. How a craft
 *obtains* candidate neighbours (catalog, CDM feed, ISL ranging) is
 implementation-defined; what it computes from the shared state is not.
 
-### 4.2 Time of closest approach (normative semantics)
+### 4.2 The canonical ephemeris
 
-Under locally-linear relative motion, `t_raw = −(dr·dv)/(dv·dv)`, with
-`t_raw = 0` when `dv·dv < 10⁻¹²` (co-drifting). Then:
+Conjunctions are *found* by propagating both craft along the **canonical
+ephemeris**: two-body Keplerian motion (`MU_EARTH`), evaluated with the
+Lagrange f&g functions in the eccentric-anomaly **difference form**
 
-* `t_raw ≤ 0` — the pair is at/past closest approach: `t_ca := 0`,
-  `miss := dr`, and the pair is *detected* iff `‖dr‖ < R_SCREEN_M`
-  (inside the bubble, still receding through it).
-* `t_raw > horizon` — closest approach beyond the window: **not detected**.
-  (Clamping to the horizon and testing distance there, as naive
-  implementations do, mis-detects passes outside the window.)
-* otherwise — `t_ca := t_raw`, `miss := dr + dv·t_ca`, detected iff
-  `‖miss‖ < R_SCREEN_M`.
+```
+F(ΔE) = ΔE + e·sinE₀·(1 − cos ΔE) − e·cosE₀·sin ΔE − n·Δt = 0
+```
 
-Both craft compute identical `t_ca` and `‖miss‖` bits from the same shared
-state; the miss *vector* seen by each is the exact negation of the other's.
+which needs only `e·sinE₀ = r₀·v₀/√(μa)` and `e·cosE₀ = 1 − r₀/a` — no
+`atan2` anywhere. The solver is **fixed-iteration**: 48 bisections on the
+bracket `[m−3, m+3]` (F is strictly increasing, `F′ = r/a > 0`, so
+bisection provably converges for every eccentricity `e < 1`), then 3 Newton
+polish steps. No convergence test, no early exit: identical inputs take the
+identical arithmetic path on every machine. All trigonometry is
+`canon_sincos` (§4.6). Non-elliptic states are outside SB/1 and propagate
+linearly (conservative over a screening window).
+
+*Fidelity vs. agreement (informative).* Two-body is the canonical
+**agreement basis**, not a precision ephemeris: catalog refresh cadence
+bounds its error inside the covariance, and perturbations act nearly
+identically on co-located craft near TCA. Higher-fidelity private
+ephemerides MAY drive operator alerting but MUST NOT feed the shared
+verdict (§3.3) — better data the other craft does not have is how two
+honest implementations disagree.
+
+### 4.2a The canonical conjunction search
+
+Normative algorithm (`screening.hpp`), per pair over `[0, horizon]`:
+
+1. **Ring prefilter.** If the two periapsis/apoapsis bands are separated by
+   more than `R_SCREEN`, the pair cannot conjunct: done. (Two square roots;
+   rejects the overwhelming majority of catalog pairs.)
+2. **Grid walk.** Sample `g(t) = dr·dv` (the range-rate sign function) on
+   the canonical grid `SCREEN_STEP_S = 32 s`. A range minimum lies in every
+   step where g goes negative → non-negative. The step is far below the
+   shortest relative-dynamics timescale, so each step holds at most one
+   extremum.
+3. **Refine.** 48 fixed bisections on the sign of g inside the bracket;
+   quantize the refined TCA to the lattice.
+4. **Kernel.** Evaluate the encounter at the refined TCA: canonical states
+   for both craft, `miss = r_B − r_A`, `‖miss‖ < R_SCREEN` to detect, then
+   Starboard-Pc (§4.5). `t = 0` uses the inside-bubble semantics: already
+   past closest approach but still inside `R_SCREEN` is a conjunction now.
+
+Every quantity in the walk is a shared, bit-deterministic function of the
+canonical states, so both craft find the same conjunctions with the same
+TCAs to the bit (conformance SB-013 pins this end-to-end). The screener
+returns the canonical **states at TCA** — Layer 1 evaluates the encounter,
+not the present (§5.1).
+
+*The linear kernel* (`geometry.hpp`) remains normative for the encounter
+itself: given a relative state, `t_raw = −(dr·dv)/(dv·dv)` (0 when
+co-drifting); `t_raw ≤ 0` means at/past closest approach — detected iff
+still inside `R_SCREEN` ("inside the bubble"); `t_raw` beyond the window is
+NOT detected (clamping to the horizon and testing there mis-detects). The
+kernel-level conformance vectors (SB-001…012) are specified in this model.
+
+```
+            ORBX ●──────▶ v_B
+                  ╲
+                   ╲ relative track
+     encounter      ╲            e₂ ▲
+     plane ⊥ v_rel ──╳────        │
+                    ╱ ╲ miss      ●──▶ e₁ = miss direction
+        v_A ◀──────● ACME         (in-plane miss = (d, 0))
+```
 
 ```
             ORBX ●──────▶ v_B
@@ -245,15 +301,26 @@ Pc = 1 − e^(−R²/2σ²), the exact Rayleigh result. And symmetric by
 construction: every term depends on squares/quadratics of the relative
 geometry, so `Pc(A,B)` and `Pc(B,A)` are the same bits.
 
-### 4.6 `canon_exp`
+### 4.6 The pinned transcendentals: `canon_exp`, `canon_sincos`
 
-The one transcendental the verdict path needs. Defined
-operation-by-operation in `canon.hpp`: Cody-Waite range reduction with the
-fdlibm ln 2 split, a 13-term Taylor polynomial in pinned Horner order, and
-an exact `ldexp` scale. Library `exp` MUST NOT be substituted — it is not
-correctly rounded, and one ulp of drift near `PC_ACTIONABLE` is a
-cross-vendor disagreement. The conformance suite pins `canon_exp` bit
-anchors directly (SB-010).
+The verdict path needs exactly two transcendental families, and both are
+defined operation-by-operation in `canon.hpp`:
+
+* **`canon_exp`** — Cody-Waite range reduction with the fdlibm ln 2 split,
+  a 13-term Taylor polynomial in pinned Horner order, an exact `ldexp`
+  scale. Used by Starboard-Pc.
+* **`canon_sincos`** — three-part Cody-Waite π/2 reduction (each split
+  constant has its low 27 mantissa bits zeroed, so the products `k·PIO2_HI`
+  and `k·PIO2_MED` are *exact* for |k| < 2²⁶), Taylor kernels on
+  |r| ≤ π/4 in pinned Horner order, quadrant selection. Domain |x| ≤ 2²⁰.
+  Used only by the canonical ephemeris (§4.2) — the Layer-1 rule
+  predicates remain trig-free by construction.
+
+Library `exp`/`sin`/`cos` MUST NOT be substituted on the verdict path — no
+libm guarantees correct rounding for them, and one ulp of drift near a
+threshold is a cross-vendor disagreement. The conformance suite pins bit
+anchors for both (SB-010, SB-014), and the `--bits` transcript folds dense
+sweeps of each (§10).
 
 ### 4.7 Actionability
 
@@ -280,6 +347,13 @@ published trajectory until the window closes — predictability is its entire
 contribution). If *neither* craft is effectively maneuverable (§8), the
 verdict is flagged **advisory**: it names a give-way craft for logging and
 operator alerting, but nobody is trusted to act.
+
+**Evaluation epoch.** Rule geometry is evaluated at the canonical states
+**at TCA** (the screener returns them, §4.2a) — the rules describe the
+*encounter*, not wherever the craft happen to be when they compute. Both
+geometric predicates (§5.5–§5.6) are additionally **asymptote forms**,
+functions of the (nearly constant) velocities through the encounter, so
+they are robust to evaluation-epoch error as well as swap-deterministic.
 
 ### 5.2 The Canonical Pair Transform
 
@@ -316,21 +390,33 @@ convention.)*
 **Rule 2 — tier.** Uses *effective* registry tier: CREWED (3) >
 CRITICAL (2) > OPERATIONAL (1) > DEORBITING (0). Lower tier gives way.
 
-**Rule 3 — overtaking.** `overtakes(x, y)` holds iff all three:
+**Rule 3 — overtaking.** `overtakes(x, y)` holds iff both:
 (a) `‖v_x‖ − ‖v_y‖ > EPS_SPEED_MPS` — x strictly faster;
-(b) x lies in y's **stern cone**: the unit vector from y to x makes an angle
-    > 112.5° with v̂_y (equivalently d̂·v̂_y < −OVERTAKE_COS);
-(c) the pair is **closing**: `d·(v_x − v_y) < 0` where d = r_x − r_y.
+(b) x runs up y's track **from astern**: x's velocity *relative to y* is
+    aligned with y's own heading within the overtake cone,
+    `(v_x−v_y)·v̂_y > OVERTAKE_COS·‖v_x−v_y‖`. (In the far past, x's
+    bearing from y is exactly `−(v_x−v_y)`: condition (b) says x
+    approaches from y's stern sector — the asymptote form of COLREGS 13's
+    "more than 22.5° abaft the beam".)
 If exactly one of `overtakes(lo,hi)`, `overtakes(hi,lo)` holds, that craft
-gives way; otherwise fall through. *(COLREGS 13, with the maritime "abaft
-the beam" sector transplanted to the velocity frame.)*
+gives way; otherwise fall through.
 
-**Rule 4 — starboard.** `sees_on_starboard(x, y)` holds iff
-`(r_y − r_x)·(v̂_x × r̂_x) > EPS_LATERAL_M` (§3.1 handedness). If exactly one
-craft sees the other to starboard, **the craft that sees gives way** — this
-resolves both crossing and offset head-on geometries. Symmetric head-on
-(both see, or neither sees within the dead-band) falls through. *(COLREGS
-15 — the namesake.)*
+**Rule 4 — starboard.** The **approach bearing** of y as seen from x is
+`−(v_y − v_x)`: y's relative position before TCA is `miss − dv·Δt`,
+dominated by `−dv`. x *sees y to starboard* iff that bearing has a
+starboard component above the dead-band:
+
+```
+−(v_y − v_x)·(v̂_x × r̂_x)  >  EPS_BEARING · ‖v_y − v_x‖
+```
+
+with starboard = `v̂ × r̂` per §3.1. If exactly one craft sees the other to
+starboard, **the craft that sees gives way** — the exact orbital
+transplant of COLREGS 15's "has the other on her own starboard side".
+Head-on (bearing dead ahead on both sides) and other symmetric geometries
+fall through. Co-drifting pairs (`‖dv‖ ≤ EPS_SPEED`) have no approach
+asymptote and fall back to the instantaneous bearing with the
+`EPS_LATERAL` dead-band.
 
 **Rule 5 — the fair coin.** The least-significant bit of the conjunction id
 (§9.3): `0` → lo gives way, `1` → hi gives way. Always defined, so the chain
@@ -519,13 +605,16 @@ hostile, buggy, or merely optimistic operator could misstate. Geometry
 coin (Rule 5) is derived from ids and time. So the trust design reduces to:
 *what do unverified assertions do?*
 
-### 8.2 Signed capability assertions
+### 8.2 Signed capability assertions and the registry
 
-A capability assertion binds `(object_id, tier, can_maneuver, epoch)` under
-an **Ed25519** signature with a registry-published key (`trust.hpp` pins the
-struct; the registry is operationally a certificate-transparency-style log
-maintained under the certification program). Craft SHOULD refresh assertions
-each mission phase; verifiers cache registry keys on board.
+A capability assertion binds `(object_id, tier, can_maneuver, validity
+window)` under an **Ed25519** signature with a registry-bound operator key.
+The full offline trust chain — assertion → operator key → Merkle inclusion
+proof → signed registry snapshot → on-board registry root key, plus
+current-state revocation — is specified in [`REGISTRY.md`](REGISTRY.md)
+and implemented in `registry.hpp` + `crypto/` (verify-only: no signing
+key ever flies). Every failed check degrades to ASSERTED per Table 8-1;
+verification is `establish_trust()`, bounded and allocation-free.
 
 ### 8.3 Conservative defaults (Table 8-1)
 
@@ -591,9 +680,13 @@ are off-network at the identifier layer, before any verdict is compared.
 
 The conformance suite (`conformance/`, [`CONFORMANCE.md`](CONFORMANCE.md))
 is the operational definition of "Starboard compatible": SB-C1 (verdict
-conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…012,
+conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…018,
 covering every rule, every degenerate geometry, the trust downgrades, the
-3-body cascade, and the Theorem 1/2 properties directly.
+3-body cascade, the end-to-end orbital search, the crypto stack, and the
+Theorem 1/2 properties directly. SB-C2's evidence artifact is the `--bits`
+transcript (`conformance/expected_bits.txt`): fold digests over tens of
+thousands of intermediate quantities, checked identical across the full
+compiler/optimization matrix by `tools/bitcheck.sh`.
 
 ## 11. Why forking loses *(informative)*
 
@@ -633,13 +726,24 @@ the moat. (Business consequences: [`STRATEGY.md`](STRATEGY.md).)
 | `κ` | maneuver margin (MANEUVER_MARGIN) |
 | `N` | phasing orbits in the mirror+phase return |
 
-## Appendix B — differences from v0.1 *(informative)*
+## Appendix B — differences from earlier drafts *(informative)*
 
-Miss-distance screening → covariance-aware Starboard-Pc; perspective-based
-rule evaluation → Canonical Pair Transform with Theorem 1 by construction;
-port/starboard handedness corrected; overtaking predicate gained speed and
-closing conditions; id-order tie-break → per-encounter fair coin;
-Cartesian nudge → analytic min-norm CW burn with mirror+phase return
-(Theorem 3); added multi-body cascade (Theorem 4), trust model (§8), strict
-arithmetic profile (§3.5), quantization lattice (§3.4), and the conformance
-suite as a first-class deliverable.
+**v0.1 → v0.2:** miss-distance screening → covariance-aware Starboard-Pc;
+perspective-based rule evaluation → Canonical Pair Transform with Theorem 1
+by construction; port/starboard handedness corrected; id-order tie-break →
+per-encounter fair coin; Cartesian nudge → analytic min-norm CW burn with
+mirror+phase return (Theorem 3); added multi-body cascade (Theorem 4),
+trust model (§8), strict arithmetic profile (§3.5), quantization lattice
+(§3.4), and the conformance suite as a first-class deliverable.
+
+**v0.2 → v0.3:** added the canonical ephemeris and conjunction search
+(§4.2–§4.2a: fixed-iteration Kepler, provably convergent bisection, ring
+prefilter) and `canon_sincos` (§4.6); rule geometry moved to the encounter
+epoch with asymptote predicates (§5.1, §5.5–§5.6) — overtaking via
+relative-velocity alignment, starboard via approach bearing; maneuver
+planning fixed to express the push direction in the Hill frame at TCA;
+registry specified and implemented (REGISTRY.md: Ed25519 verify-only
+chain, Merkle log, current-state revocation); SB-C2 gained the `--bits`
+transcript and the cross-toolchain matrix (20/20 builds bit-identical).
+Draft revisions before first publication share `RULESET_ID`; the id-bump
+discipline (§11, §9.3) starts at publication.

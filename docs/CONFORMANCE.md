@@ -28,11 +28,21 @@ expected `detected`/`actionable` flags, `deciding_rule`, `give_way_id`,
 
 ### SB-C2 — Bit conformance (MUST for flight software)
 
-Additionally, bit-equality on the pinned anchors: Starboard-Pc for SB-001
-(`0x3F5117B3E92585E2`), the `canon_exp` anchors of SB-010, and every
-conjunction id. Maneuver quantities (Δv vectors, return plans) are checked
-to 10⁻⁹ relative tolerance — they are single-craft outputs, not
-cross-craft agreements, so tolerance is sufficient there.
+Additionally, bit-equality on the pinned anchors — Starboard-Pc for SB-001
+(`0x3F5117B3E92585E2`), the `canon_exp`/`canon_sincos` anchors (SB-010,
+SB-014), the SB-013 search TCA/Pc, and every conjunction id — **and** on
+the full `--bits` transcript: the runner's `--bits` mode emits
+`conformance/expected_bits.txt`, whose fold digests cover dense sweeps of
+the transcendentals, the ephemeris, the Pc kernel, the 4096-pair verdict
+population, and the registry hash stack. `tools/bitcheck.sh` builds the
+runner across every available compiler × optimization level and diffs the
+transcript; the reference matrix (g++ 13 and clang++ 18 at -O0 through
+-O3 -march=native, 20 builds) is bit-identical. Its first run caught a
+real divergence — unspecified C++ argument-evaluation order in the test
+harness itself — which is exactly the class of bug this level exists to
+catch. Maneuver quantities (Δv vectors, return plans) are checked to 10⁻⁹
+relative tolerance — they are single-craft outputs, not cross-craft
+agreements, so tolerance is sufficient there.
 
 ### SB-C3 — Closed-loop conformance (SHOULD)
 
@@ -57,10 +67,19 @@ within 1 m. This is the level a certification engagement actually runs.
 | SB-010 | the pinned transcendental | `canon_exp` bit anchors + 10⁻¹³ accuracy |
 | SB-011 | Theorem 2 | double give-way displacements oppose |
 | SB-012 | 4096-geometry LCG sweep | swap-invariance + totality, empirically |
+| SB-013 | end-to-end orbital search (crossing orbits) | conjunction FOUND; TCA/Pc **bit anchors**; Rule 4 at the encounter |
+| SB-014 | canonical trig + ephemeris | `canon_sincos` bit anchors; 10⁻¹³ sweep; two-body closure |
+| SB-015 | SHA-512 | FIPS 180-2 example vectors |
+| SB-016 | Ed25519 verify | RFC 8032 §7.1 vectors + tamper/zero-key/non-canonical-S rejects |
+| SB-017 | registry pipeline | libsodium-signed fixtures: VERIFIED, and every downgrade path |
+| SB-018 | Merkle log | C++ root == independent (Python) root; proofs verify; corruption fails |
 
 Inputs are defined in `conformance/runner.cpp` (the runner is normative:
-its scenario constants ARE the vectors). Run: `cmake -B build && cmake
---build build && ctest --test-dir build`.
+its scenario constants ARE the vectors; SB-017/018 fixtures are generated
+by `conformance/gen_fixtures.py` — an independent implementation of the
+REGISTRY.md encodings, signed by libsodium). Run: `cmake -B build && cmake
+--build build && ctest --test-dir build`, then `tools/bitcheck.sh` for the
+SB-C2 matrix.
 
 ## 4. Certification process
 

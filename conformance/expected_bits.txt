@@ -9,3 +9,4 @@ search.miss    4062BFF0006EEF4E
 search.pc      3F5117B5BB93E612
 pc-kernel      9DDBFA3DAF468629
 verdict-sweep  7DD27B1D45C033A6
+registry       0A10C856E3BBAE18
