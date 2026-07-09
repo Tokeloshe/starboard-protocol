@@ -101,13 +101,17 @@ TCA_BUCKET` treats the window as closed.
 
 ## 5. Security
 
-Messages SHOULD be signed (Ed25519 over header‖body, 64 bytes appended)
-with the sender's registry key — the same key that signs capability
-assertions (DESIGN.md §8.2). Unsigned traffic is processed but its
-`dispute`/`advisory` claims are treated at ASSERTED trust. A forged INTENT
-cannot redirect anyone: the receiver acts on its own verdict regardless
-(§3.1), so the worst a forger achieves is a logged dispute under someone
-else's identity — which the signature requirement then removes.
+Messages SHOULD be signed (Ed25519 over `"STARBOARD:MSG/1" ‖ header ‖
+body`, 64 bytes appended) with the sender's registry-bound operator key —
+the same key, fingerprint rule, and revocation regime that govern
+capability assertions ([`REGISTRY.md`](REGISTRY.md); the domain prefix
+keeps message signatures unreplayable as assertions and vice versa).
+Receivers verify with the same offline chain (`registry.hpp`). Unsigned
+traffic is processed but its `dispute`/`advisory` claims are treated at
+ASSERTED trust. A forged INTENT cannot redirect anyone: the receiver acts
+on its own verdict regardless (§3.1), so the worst a forger achieves is a
+logged dispute under someone else's identity — which the signature
+requirement then removes.
 
 ## Appendix A — fixed binary layout (flight profile)
 

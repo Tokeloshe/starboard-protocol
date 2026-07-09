@@ -366,6 +366,22 @@ inline void ge_add(GePoint& r, const GePoint& p, const GePoint& q) {
     fe_mul(r.z, f, g);
 }
 
+// Identity check in extended coordinates: (0 : Z : Z : 0), Z != 0.
+inline bool ge_is_identity(const GePoint& p) {
+    return fe_iszero(p.x) && fe_eq(p.y, p.z);
+}
+
+// True iff the point has order dividing 8 (the torsion subgroup): [8]P is
+// the identity after three doublings. Constant-free and self-evidently
+// correct, unlike an encoded-point blocklist.
+inline bool ge_is_small_order(const GePoint& p) {
+    GePoint t;
+    ge_add(t, p, p);
+    ge_add(t, t, t);
+    ge_add(t, t, t);
+    return ge_is_identity(t);
+}
+
 // Variable-time scalar multiplication (MSB-first double-and-add).
 // scalar is 32 little-endian bytes. Acceptable because all inputs to
 // verification are public data.
@@ -576,6 +592,14 @@ inline bool ed25519_verify(const uint8_t signature[64], const uint8_t* message,
 
     GePoint a_point;
     if (!ge_frombytes(a_point, public_key)) {
+        return false;
+    }
+
+    // Reject small-order public keys ([8]A == identity). RFC 8032 permits
+    // them, but under such a key ANYONE can forge signatures — which voids
+    // the attributability the Starboard registry's revocation model rests
+    // on (REGISTRY.md §8). No legitimate operator key is small-order.
+    if (ge_is_small_order(a_point)) {
         return false;
     }
 

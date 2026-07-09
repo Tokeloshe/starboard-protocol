@@ -573,11 +573,20 @@ void sb016() {
         const uint8_t wrong[2] = {0xAFu, 0x83u};
         if (crypto::ed25519_verify(sig, wrong, 2u, pub)) { ok = false; }
     }
-    // All-zero public key and non-canonical S (== L) must be rejected.
+    // All-zero and small-order public keys, and non-canonical S (== L),
+    // must be rejected. The identity-point key (0x01, 0...) is the
+    // repudiation attack: anyone can "sign" under it.
     {
         uint8_t zero[32] = {0};
         uint8_t sig[64] = {0};
         if (crypto::ed25519_verify(sig, nullptr, 0u, zero)) { ok = false; }
+        uint8_t ident[32] = {0};
+        ident[0] = 1u;
+        // Any (R, S) with S < L "verifies" under the identity key when
+        // R = [S]B; use S = 0, R = identity encoding — must be rejected.
+        uint8_t forge[64] = {0};
+        forge[0] = 1u;
+        if (crypto::ed25519_verify(forge, nullptr, 0u, ident)) { ok = false; }
         uint8_t pub[32];
         (void)hex_decode(vs[0].pub, pub, 32u);
         uint8_t sl[64] = {0};
