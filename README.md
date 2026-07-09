@@ -134,8 +134,10 @@ that make the protocol safe make it unforkable.
 
 Early. Private while the specification and IP position are established.
 Ruleset SB/1 (spec v0.5 draft) is implemented, proven, and
-conformance-tested; `docs/DESIGN.md` Appendix B records the revision history,
-and `docs/OPEN-PROBLEMS.md` is an honest ledger of the remaining edges.
+conformance-tested — see `CHANGELOG.md` for the full arc, `docs/DESIGN.md`
+Appendix B for the normative history, and `docs/OPEN-PROBLEMS.md` for an
+honest ledger of the remaining edges. Engineering is launch-ready; the
+go-public sequence (wordmark first) is in `docs/STRATEGY.md` §9.
 
 ## License
 

@@ -128,7 +128,8 @@ make it unforkable.** Engineering rigor and defensibility are one artifact.
 ## 6. Adoption path (the hard part, sequenced)
 
 1. **Publish spec + reference impl** openly; git history + license notices
-   are the provenance record. *(done — this repo)*
+   are the provenance record. *(ready — this repo, spec v0.5; gated on the
+   wordmark, see §9)*
 2. **Ship the irrefutable demo**: two rival sats, zero comms, identical Pc
    bits, identical verdict, min-Δv burn, flock back to slot; then a 3-body
    window. `examples/crossing_demo.cpp` prints exactly this timeline — a
@@ -170,3 +171,33 @@ make it unforkable.** Engineering rigor and defensibility are one artifact.
       dies.
 - [ ] Registry key ceremony design before any flight use of signed
       assertions (DESIGN.md §8.2).
+
+## 9. Pre-public launch checklist
+
+The engineering is launch-ready (ruleset SB/1 spec v0.5: implemented, proven,
+conformance-tested, cross-language bit-identical — see `CHANGELOG.md`). Going
+public is a **business** decision with one hard-to-reverse step. Sequence:
+
+**Before flipping the repo public (do these first):**
+- [ ] **File the `Starboard` wordmark** (classes: software; testing/
+      certification services) — or lock the final name and file it. Publishing
+      stakes the name; the mark should lead, per §8. This is the gating item.
+- [ ] Reserve the domain + the `Starboard Certified™` mark alongside it.
+- [ ] Confirm the CC BY 4.0 (spec) / AGPL-3.0 (code) / commercial split is
+      exactly as intended in every file header (SPDX audit — currently clean).
+- [ ] Decide the contribution policy is visible: a `CONTRIBUTING.md` stating
+      **no outside code without a CLA** (protects dual-licensing).
+
+**The public flip (reversible-ish → treat as one-way):**
+- [ ] Merge the refinement branch to `main` (a PR is the natural vehicle;
+      open it when you're ready — it is not opened automatically).
+- [ ] Make the repository public. *(Irreversible in practice: once cloned/
+      indexed it is out. Do only after the wordmark step.)*
+- [ ] Tag `v0.5` and publish `CHANGELOG.md` as the release notes.
+
+**Immediately after (the adoption flywheel, §6):**
+- [ ] Record the 60-second demo (`examples/crossing_demo.cpp`) — the pitch.
+- [ ] Approach one lighthouse adopter and one data provider in parallel.
+
+The repository stays **private** until the wordmark step is complete. Nothing
+in this checklist is executed automatically; each is the author's call.
