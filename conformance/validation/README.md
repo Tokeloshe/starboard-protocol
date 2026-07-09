@@ -25,13 +25,28 @@ python3 conformance/validation/pc_reference.py /tmp/pc.csv
 The reference reports the maximum relative error over cases with meaningful Pc
 (> 1e-6) and fails if any exceeds the documented bound.
 
-## Known result driving the current Pc rework
+## Result: Patera replaced Chan
 
-This validator established that Chan's equivalent-area series (the earlier Pc
-kernel) is method-limited on **elongated / correlated** covariance — the
-*common* LEO case, where along-track uncertainty dominates. The error is in
-the circularization, not the series order (raising the order from 24 to 80
-terms leaves it unchanged), so the disc integral is being replaced by a
-method that is accurate for any covariance aspect ratio while remaining
-deterministic (pinned node count, only `canon_exp`/`canon_sincos`). This
-README and the bound are updated when that rework lands.
+This validator drove a Pc-method change. It first established that Chan's
+equivalent-area series (the earlier kernel) is method-limited on **elongated /
+correlated** covariance — the *common* LEO case, where along-track uncertainty
+dominates — with 0.6–0.8% typical and up to ~15% relative error. The cause is
+the circularization, not the series order (raising it from 24 to 80 terms left
+the error unchanged), so a series variant could not fix it.
+
+The disc integral is now **Patera's divergence-theorem contour integral**
+(`PATERA_NODES = 32`, periodic trapezoid; see `covariance.hpp`). Its accuracy
+is set by the node count, not the covariance shape, so it is accurate for any
+aspect ratio while staying deterministic (pinned nodes; only `canon_exp` and
+`canon_sincos`). Measured against this independent reference:
+
+| Pc kernel | max rel. error (meaningful Pc), incl. 5:1–50:1 elongated |
+|---|---|
+| Chan series (old) | ~1.5e-1 worst, ~6e-3 typical — **fails** the 1e-4 bar |
+| Patera N=32 (now) | **3.8e-6** worst (at Pc≈1e-12); ~1e-13 at meaningful Pc — **passes** |
+
+The bound is currently **1e-4** (passed with orders of margin). Selection
+evidence: a four-method bake-off (Patera, direct 2-D quadrature, Foster with a
+pinned erf, corrected-Chan) measured all candidates against scipy adaptive
+quadrature; Patera won on accuracy-for-any-covariance, cost (~32 nodes vs 2048
+for direct quadrature), and determinism.

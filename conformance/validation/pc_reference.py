@@ -69,7 +69,7 @@ def true_pc(miss, vrel, C, R):
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/pc.csv"
     rows = np.genfromtxt(path, delimiter=",", names=True)
-    BOUND = 1e-3          # required relative accuracy of the series
+    BOUND = 1e-4          # required relative accuracy of the Pc method
     FLOOR = 1e-12         # ignore Pc below the numerically-meaningful floor
     worst = 0.0
     worst_desc = ""

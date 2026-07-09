@@ -15,6 +15,7 @@
 #include "propagator.hpp"  // Layer 0: canonical J2 propagator
 #include "covariance.hpp"  // Layer 0: Starboard-Pc
 #include "screening.hpp"   // Layer 0: canonical conjunction search
+#include "broadphase.hpp"  // Layer 0: constellation-scale broad-phase
 #include "trust.hpp"       // adversarial model: assertions & downgrades
 #include "registry.hpp"    // offline trust chain: assertions -> registry root
 #include "rules.hpp"       // Layer 1: the Rules of the Orbital Road

@@ -47,7 +47,7 @@ constexpr double R_SCREEN_M    = 8192.0;   // 2^13 m coarse screening gate
 constexpr double R_SAFE_M      = 1024.0;   // 2^10 m required post-maneuver miss
 constexpr double PC_ACTIONABLE = 1.0e-4;   // Pc threshold declaring a conjunction
 constexpr double DEFAULT_HBR_M = 10.0;     // per-craft hard-body radius default
-constexpr int    CHAN_TERMS    = 24;       // fixed order of the Pc series (§4.5)
+constexpr int    PATERA_NODES  = 32;       // fixed nodes of the Pc contour (§4.5)
 constexpr double VAR_FLOOR_M2  = 1.0;      // covariance eigenvalue floor (1 m^2)
 constexpr double DEFAULT_VAR_M2 = 1.0e6;   // (1 km)^2: conservative default when
                                            // a craft publishes no covariance
@@ -130,10 +130,12 @@ inline double canon_exp(double x) {
 
 // --- §4.6 canon_sincos: the second pinned transcendental pair -----------------
 // sin(x) and cos(x) for |x| <= 2^20 rad, defined operation-by-operation so
-// every conformant implementation computes identical bits. Used by the
-// Clohessy-Wiltshire maneuver dynamics (frames.hpp); the canonical propagator
-// and the Layer-1 rule predicates are trig-free, so canon_exp is the only
-// pinned transcendental on the VERDICT path. Three-part Cody-Waite reduction
+// every conformant implementation computes identical bits. On the VERDICT
+// path it powers the Patera Pc contour integral (covariance.hpp); it also
+// drives the Clohessy-Wiltshire maneuver dynamics (frames.hpp). Together with
+// canon_exp these are the only two pinned transcendentals a verdict depends
+// on (the canonical propagator and the rule predicates are trig-free).
+// Three-part Cody-Waite reduction
 // by pi/2 (each split constant has its low 27 mantissa bits zeroed, so
 // k*PIO2_HI and k*PIO2_MED are EXACT for |k| < 2^26), then Taylor kernels on
 // |r| <= pi/4 in pinned Horner order. Kernel truncation < 1 ulp; total error

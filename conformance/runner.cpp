@@ -47,7 +47,7 @@ constexpr uint64_t EPOCH_MS = 1401000000000ull;
 
 // SB-C2 bit anchors for SB-013/SB-014 (pinned from the reference run).
 constexpr uint64_t SB013_TCA_BITS  = 0x4089000000000000ull; // 800.0 s exact
-constexpr uint64_t SB013_PC_BITS   = 0x3F5117B4A88B61FCull; // 1.043e-03
+constexpr uint64_t SB013_PC_BITS   = 0x3F5117B4A88B614Cull; // 1.043e-03
 constexpr uint64_t SB014_SIN1_BITS = 0x3FEAED548F090CEEull;
 constexpr uint64_t SB014_COS1_BITS = 0x3FE14A280FB5068Cull;
 constexpr uint64_t SB014_SINM_BITS = 0x3F4237685A41A8BDull;
@@ -123,7 +123,7 @@ CraftDescriptor crossing_b() {
 // ---------------------------------------------------------------------------
 void sb001() {
     const PairResult r = run_pair(crossing_a(), crossing_b());
-    const bool pc_bits_ok = (bits_of(r.c_ab.pc) == 0x3F5117B3E92585E2ull);
+    const bool pc_bits_ok = (bits_of(r.c_ab.pc) == 0x3F5117B3E9258534ull);
     report("SB-001", "crossing: starboard craft gives way",
            expect(r, DecidingRule::STARBOARD, "2026-001A") &&
            actionable(r.c_ab) && pc_bits_ok);
@@ -694,6 +694,66 @@ void sb019() {
 }
 
 // ---------------------------------------------------------------------------
+// SB-020  broad-phase recall = 1.0: on a seeded constellation, every pair the
+//         pairwise search detects is present in the radial-band candidate set
+//         (the unconditional superset property, SPEC §4.8), and it prunes.
+// ---------------------------------------------------------------------------
+void sb020() {
+    const uint32_t N = 220u;
+    CraftState objs[260];
+    uint64_t s = 0xB0A2Dull;
+    const auto rnd = [&s]() {
+        s = lcg_next(s);
+        return static_cast<double>(s >> 11) / 9007199254740992.0;
+    };
+    const double incs[5] = {0.0, 28.0, 53.0, 70.0, 98.0};
+    uint32_t m = 0u;
+    for (uint32_t i = 0u; i < N; ++i) {
+        const double r = canon::R_EARTH_M + 400.0e3 + 800.0e3 * rnd();
+        objs[m++] = circular(r, incs[i % 5] * canon::PI / 180.0,
+                             2.0 * canon::PI * rnd());
+    }
+    // Seed close pairs: clone with a cross-track offset inside R_SCREEN.
+    for (uint32_t k = 0u; k < 30u; ++k) {
+        const uint32_t i = static_cast<uint32_t>(rnd() * N);
+        CraftState c = objs[i];
+        const Vec3 ch = c.position.cross(c.velocity).normalized();
+        c.position = c.position + ch * 150.0;
+        objs[m++] = c;
+    }
+    const uint32_t total = m;
+
+    // Brute-force truth.
+    uint32_t truth = 0u, missed = 0u;
+    broadphase::Band bands[260];
+    uint32_t active[260];
+    broadphase::Pair out[260 * 260 / 2];
+    bool ovf = false;
+    const uint32_t nc = broadphase::radial_band_pairs(
+        objs, total, bands, active, out, sizeof(out) / sizeof(out[0]), &ovf);
+    for (uint32_t i = 0u; i < total; ++i) {
+        for (uint32_t j = i + 1u; j < total; ++j) {
+            OrbitConjunction oc;
+            if (screen_orbits(objs[i], objs[j], Sym33::diagonal(1.0e4),
+                              Sym33::diagonal(1.0e4), 20.0,
+                              canon::SCREEN_ARC_MAX_S, &oc)) {
+                ++truth;
+                bool found = false;
+                for (uint32_t k = 0u; k < nc; ++k) {
+                    if (out[k].i == i && out[k].j == j) { found = true; break; }
+                }
+                if (!found) { ++missed; }
+            }
+        }
+    }
+    const double n2 = 0.5 * static_cast<double>(total) *
+                      static_cast<double>(total - 1u);
+    report("SB-020", "broad-phase recall=1.0 + pruning",
+           !ovf && (missed == 0u) && (truth > 0u) &&
+           (static_cast<double>(nc) < 0.75 * n2));
+}
+
+// ---------------------------------------------------------------------------
 // SB-018  Merkle log: C++ root reproduces the (Python-signed) snapshot root;
 //         all inclusion proofs verify; corruption fails.
 // ---------------------------------------------------------------------------
@@ -890,6 +950,7 @@ int main(int argc, char** argv) {
     sb017();
     sb018();
     sb019();
+    sb020();
     std::printf("\n%s (%d failure%s)\n",
                 (g_failures == 0) ? "SB-C1 + SB-C2 vectors: ALL PASS"
                                   : "CONFORMANCE FAILED",

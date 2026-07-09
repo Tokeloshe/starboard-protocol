@@ -31,12 +31,13 @@ unforkable**:
   canonical propagator (fixed-step two-body + J2, deterministic and
   physically valid to ~1 m over a bounded arc) from a shared conjunction
   data message, and assessed as covariance-aware probability of collision
-  (encounter-plane Pc via Chan's series at fixed order),
-  with a power-of-two quantization lattice, a strict IEEE-754 arithmetic
-  profile, and spec-pinned transcendentals — so two independent
-  implementations produce **bit-identical** conjunctions, Pc, and
-  verdicts. Not aspiration: `tools/bitcheck.sh` shows 20/20 compiler ×
-  optimization builds byte-identical across a ~50,000-quantity transcript.
+  (encounter-plane Pc via Patera's contour integral — accurate to ~1e-12 for
+  any covariance aspect ratio, validated against an independent quadrature).
+  A power-of-two quantization lattice, a strict IEEE-754 arithmetic profile,
+  and two spec-pinned transcendentals mean two independent implementations
+  produce **bit-identical** conjunctions, Pc, and verdicts. Not aspiration:
+  `tools/bitcheck.sh` shows 20/20 compiler × optimization builds
+  byte-identical across a ~50,000-quantity transcript.
 - **Theorem 2 (lies are safe).** Unverified claims degrade toward physics:
   an unverifiable craft is treated as debris and avoided; spoofing can
   reallocate fuel costs, never safety — even if *both* craft maneuver,
@@ -63,7 +64,7 @@ unforkable**:
 cmake -B build && cmake --build build
 ./build/starboard_crossing_demo     # two rivals agree with zero comms,
                                     # then a 3-body window with a derelict
-ctest --test-dir build              # the conformance suite (SB-001..019)
+ctest --test-dir build              # the conformance suite (SB-001..020)
 ```
 
 The demo prints the full timeline: independent screening with identical Pc
@@ -86,7 +87,8 @@ starboard-protocol/
 │   ├── geometry.hpp       Layer 0: encounter kernel
 │   ├── propagator.hpp     Layer 0: canonical J2 propagator
 │   ├── screening.hpp      Layer 0: canonical conjunction search
-│   ├── covariance.hpp     Layer 0: Starboard-Pc
+│   ├── covariance.hpp     Layer 0: Starboard-Pc (Patera contour)
+│   ├── broadphase.hpp     Layer 0: constellation-scale broad-phase
 │   ├── rules.hpp          Layer 1: the Rules of the Orbital Road
 │   ├── trust.hpp          Adversarial model: assertions & downgrades
 │   ├── registry.hpp       Offline trust chain (Merkle log, revocation)
@@ -94,7 +96,8 @@ starboard-protocol/
 │   ├── frames.hpp         Hill frame, Clohessy-Wiltshire dynamics
 │   ├── maneuver.hpp       Min-Δv give-way, mirror+phase return
 │   └── multibody.hpp      Multi-craft window resolution
-├── conformance/           Vectors SB-001..SB-018 + bit transcript (normative)
+├── conformance/           Vectors SB-001..SB-020 + bit transcript (normative)
+│   └── validation/        Independent Pc reference + broad-phase scale demo
 ├── tools/bitcheck.sh      SB-C2 cross-toolchain bit-agreement matrix
 ├── examples/crossing_demo.cpp
 └── CMakeLists.txt
@@ -122,8 +125,8 @@ that make the protocol safe make it unforkable.
 ## Status
 
 Early. Private while the specification and IP position are established.
-Ruleset SB/1 is implemented, proven, and conformance-tested;
-`docs/DESIGN.md` Appendix B records everything that changed from v0.1.
+Ruleset SB/1 (spec v0.5 draft) is implemented, proven, and
+conformance-tested; `docs/DESIGN.md` Appendix B records the revision history.
 
 ## License
 

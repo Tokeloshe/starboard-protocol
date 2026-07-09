@@ -74,6 +74,7 @@ within 1 m. This is the level a certification engagement actually runs.
 | SB-017 | registry pipeline | libsodium-signed fixtures: VERIFIED, and every downgrade path |
 | SB-018 | Merkle log | C++ root == independent (Python) root; proofs verify; corruption fails |
 | SB-019 | snapshot freshness | stale (pre-revocation) and future-dated snapshots rejected; boundary exact |
+| SB-020 | broad-phase recall | radial-band superset: every brute-force conjunction retained on a seeded constellation; prunes |
 
 Inputs are defined in `conformance/runner.cpp` (the runner is normative:
 its scenario constants ARE the vectors; SB-017/018 fixtures are generated

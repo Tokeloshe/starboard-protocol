@@ -7,19 +7,27 @@
 // ============================================================================
 // Starboard — covariance-aware probability of collision (SPEC §4.3–§4.6).
 //
-// Starboard-Pc is the standard short-encounter 2-D formulation (combined
-// position covariance projected onto the encounter plane, integrated over the
-// combined hard-body circle) evaluated with CHAN'S SERIES at a FIXED order,
-// in a PINNED summation order. It is a DEFINED quantity, not an
-// approximation: conformance level SB-C2 requires bit-equality.
+// Starboard-Pc is the standard short-encounter 2-D formulation: the combined
+// position covariance is projected onto the encounter plane, and the Gaussian
+// is integrated over the combined hard-body disc. It is a DEFINED quantity,
+// not an approximation: conformance level SB-C2 requires bit-equality.
 //
-// Two deliberate reformulations remove every transcendental except exp:
-//  * The Mahalanobis form  v = d^2 * b / det(Cp)  replaces the eigen-rotation
-//    (no atan2/sin/cos), using the fact that the in-plane miss is (d, 0) in
-//    the pinned encounter basis.
-//  * u = R^2 / sqrt(det(Cp)) replaces R^2/(sigma_x*sigma_y).
-// sqrt is IEEE-correctly-rounded; exp is pinned by canon_exp(). The whole
-// verdict path is therefore bit-deterministic across implementations.
+// The disc integral is evaluated by PATERA'S divergence-theorem reduction to
+// a 1-D CONTOUR integral, sampled at a FIXED PATERA_NODES equally-spaced
+// angles (periodic trapezoid on an analytic periodic integrand => spectral
+// convergence). This replaces the earlier Chan equivalent-area series, whose
+// circularization error reached tens of percent for elongated/correlated
+// covariance — the common LEO case. Patera's error is set by the node count,
+// NOT the covariance shape: N=32 matches an independent adaptive quadrature to
+// ~1e-12 relative for aspect ratios up to 50:1 (conformance/validation).
+//
+// No eigen-rotation and no atan2: the plane is whitened with the Cholesky
+// factor of C2^{-1} (sqrt only), and the standard normal's rotational
+// invariance makes any such whitening valid. The verdict path uses only
+// IEEE-exact ops (+ - * / sqrt) plus the two pinned transcendentals
+// canon_exp and canon_sincos, so it is bit-deterministic across
+// implementations. (This is the one place canon_sincos is on the VERDICT
+// path — SPEC §4.6.)
 // ============================================================================
 
 #include "geometry.hpp"
@@ -113,24 +121,44 @@ inline double starboard_pc(const Conjunction& conj, const Sym33& c_comb,
     const double det_floor = canon::VAR_FLOOR_M2 * canon::VAR_FLOOR_M2;
     if (det < det_floor) { det = det_floor; }
 
-    // --- Mahalanobis form: in-plane miss is (d_p, 0) in this basis ---
-    const double u = (r_hb * r_hb) / std::sqrt(det);
-    const double v = ((d_p * d_p) * b) / det;
+    // --- Whitening: Cholesky L Lᵀ = C2⁻¹, so uᵀu = sᵀC2⁻¹s under u = Lᵀs.
+    // C2⁻¹ = (1/det) [[b, -c],[-c, a]]; sqrt only, no eigen-rotation. ---
+    const double inv = 1.0 / det;
+    const double L11 = std::sqrt(b * inv);
+    const double L21 = (-cx * inv) / L11;
+    const double L22 = std::sqrt(a * inv - L21 * L21);
 
-    // --- Chan's series, fixed order, pinned ascending summation (SPEC §4.5) ---
-    const double eu = canon::canon_exp(-0.5 * u);
-    const double ev = canon::canon_exp(-0.5 * v);
-    double tv  = 1.0;   // (v/2)^m / m!
-    double tk  = 1.0;   // (u/2)^m / m!
-    double s   = eu;    // e^{-u/2} * sum_{k<=m} (u/2)^k / k!
-    double acc = 0.0;
-    for (int m = 0; m <= canon::CHAN_TERMS; ++m) {
-        acc += tv * (1.0 - s);
-        tv *= (0.5 * v) / static_cast<double>(m + 1);
-        tk *= (0.5 * u) / static_cast<double>(m + 1);
-        s  += eu * tk;
+    // --- Patera contour integral (SPEC §4.5): the collision disc is centered
+    // at s_c = (-d_p, 0) with radius r_hb; the standard-normal probability is
+    // P = (1/2pi) oint (1 - e^{-|u|^2/2})/|u|^2 (u_x du_y - u_y du_x), sampled
+    // at PATERA_NODES equally-spaced angles. Pinned ascending summation. ---
+    const double R = r_hb;
+    const double two_pi = 2.0 * canon::PI;
+    const double dphi = two_pi / static_cast<double>(canon::PATERA_NODES);
+    double sum = 0.0;
+    for (int i = 0; i < canon::PATERA_NODES; ++i) {
+        double cphi, sphi;
+        canon::canon_sincos(dphi * static_cast<double>(i), &sphi, &cphi);
+        const double sx = -d_p + R * cphi;   // boundary point (s-space)
+        const double sy = R * sphi;
+        const double dsx = -R * sphi;         // d/dphi of the boundary point
+        const double dsy = R * cphi;
+        const double ux = L11 * sx + L21 * sy;   // whitened coordinates
+        const double uy = L22 * sy;
+        const double dux = L11 * dsx + L21 * dsy;
+        const double duy = L22 * dsy;
+        const double w = ux * ux + uy * uy;      // |u|^2
+        const double cross = ux * duy - uy * dux;
+        double factor;
+        if (w < canon::Q_COV_M2) {   // 2^-20: series near the removable pole
+            factor = 0.5 - 0.125 * w;            // (1-e^{-w/2})/w = 1/2 - w/8 …
+        } else {
+            factor = (1.0 - canon::canon_exp(-0.5 * w)) / w;
+        }
+        sum += factor * cross;
     }
-    double pc = ev * acc;
+    // P = (1/2pi) * dphi * sum = sum / PATERA_NODES (exact: N is 2^5).
+    double pc = sum / static_cast<double>(canon::PATERA_NODES);
     if (pc < 0.0) { pc = 0.0; }
     if (pc > 1.0) { pc = 1.0; }
     return pc;

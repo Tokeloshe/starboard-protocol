@@ -1,6 +1,6 @@
 # Starboard Specification — The Rules of the Orbital Road
 
-**Ruleset SB/1 · Specification v0.4 (draft) · `RULESET_ID = 0x53420001`**
+**Ruleset SB/1 · Specification v0.5 (draft) · `RULESET_ID = 0x53420001`**
 
 *Specification text © 2026 James H, licensed CC BY 4.0. The reference
 implementation in `core/` is dual-licensed AGPL-3.0 / commercial.*
@@ -138,11 +138,13 @@ contraction, reassociation, or "fast-math" transformations, and MUST evaluate
 expressions in the operation order this spec and the reference code pin
 (dot products expand x, then y, then z; sums accumulate in ascending index
 order). The only permitted operations are `+ − × ÷ sqrt` (all correctly
-rounded per IEEE-754) and `canon_exp` (§4.6). `sin`, `cos`, `atan2`, `pow`,
-and library `exp` are **forbidden on the verdict path** — no libm guarantees
-correct rounding for them, and the spec is deliberately formulated so they
-are never needed (§4.5). Off the verdict path (maneuver planning, §6) normal
-libm is permitted; those quantities are checked to tolerances, not bits.
+rounded per IEEE-754) and the pinned transcendentals `canon_exp` and
+`canon_sincos` (§4.6). Library `sin`, `cos`, `exp`, `atan2`, `pow`, and `erf`
+are **forbidden on the verdict path** — no libm guarantees correct rounding
+for them. The verdict path needs `canon_sincos` in exactly one place, the
+Patera Pc contour (§4.5); everywhere else it is `sqrt`/`canon_exp`/arithmetic
+by construction. Off the verdict path (maneuver planning, §6) normal libm is
+permitted; those quantities are checked to tolerances, not bits.
 
 ### 3.6 Canonical constants
 
@@ -159,7 +161,7 @@ All conformant implementations MUST use exactly these values
 | `PC_ACTIONABLE` | Pc declaring a conjunction | 1.0 × 10⁻⁴ |
 | `DEFAULT_HBR_M` | default hard-body radius | 10 m |
 | `DEFAULT_VAR_M2` | covariance for silent craft | 10⁶ m² (σ = 1 km) |
-| `CHAN_TERMS` | order of the Pc series | 24 |
+| `PATERA_NODES` | nodes of the Pc contour integral | 32 (2⁵) |
 | `VAR_FLOOR_M2` | plane-covariance eigenfloor | 1 m² |
 | `OVERTAKE_COS` | stern-cone half-angle | 0.3826834323650898 (cos 67.5°) |
 | `EPS_SPEED_MPS` | speed-ordering dead-band | 0.0625 m/s (2⁻⁴) |
@@ -321,32 +323,42 @@ floored per §3.6), and the in-plane miss is `(d_p, 0)` with `d_p = miss·e₁`
 ### 4.5 Starboard-Pc (a defined quantity)
 
 The classical 2-D encounter Pc is the integral of the projected Gaussian
-over the hard-body disc. Starboard evaluates it with **Chan's equivalent-area
-series**, reformulated so the verdict path needs no eigen-rotation and no
-trigonometry:
+over the hard-body disc. Starboard evaluates it by **Patera's
+divergence-theorem reduction** to a 1-D contour integral, sampled at a fixed
+`PATERA_NODES = 32` equally-spaced angles. Whiten the plane with the Cholesky
+factor `L` of `C2⁻¹` (`sqrt` only — the standard normal's rotational
+invariance makes any `W` with `Wᵀ W = C2⁻¹` valid, so no eigen-rotation and
+no `atan2`):
 
 ```
-det = a·b − c²                    (floored at VAR_FLOOR²)
-u   = R² / sqrt(det)              (dimensionless hard-body area)
-v   = d_p² · b / det              (Mahalanobis miss — exact, no rotation)
+det = a·b − c²                        (floored at VAR_FLOOR²)
+C2⁻¹ = (1/det)·[[b, −c], [−c, a]]      L Lᵀ = C2⁻¹  (2×2 Cholesky)
+disc: centre s_c = (−d_p, 0), radius R = r_hb, boundary s(φ)=s_c+R(cosφ,sinφ)
+u(φ) = Lᵀ s(φ)                         (whitened boundary)
 
-Pc  = e^(−v/2) · Σ_{m=0}^{24} (v/2)^m/m! · [ 1 − e^(−u/2) · Σ_{k=0}^{m} (u/2)^k/k! ]
+Pc = (1/2π) ∮ [1 − e^(−|u|²/2)] / |u|²  (u_x du_y − u_y du_x)
+   = (1/N) Σ_{i=0}^{N−1} factor(φ_i)·(u_x u′_y − u_y u′_x),  φ_i = i·2π/N
 ```
 
-evaluated with `canon_exp` and the exact recurrence/summation order of the
-reference implementation (ascending m, inner terms accumulated by the
-running-product recurrence — see `covariance.hpp`).
+evaluated with `canon_sincos` (node angles) and `canon_exp` (the exponential),
+in the pinned ascending summation order of the reference implementation
+(`covariance.hpp`). The removable pole at `|u|²→0` uses the pinned series
+`(1 − e^(−w/2))/w = ½ − w/8 + …` below `2⁻²⁰`. `N = 32` is a power of two, so
+the final `1/N` scaling is exact.
 
-**Starboard-Pc is defined as this finite expression.** It approximates true
-Pc to well within the fidelity of any operational covariance for u, v in the
-LEO regime, but its role in the protocol is not to be maximally accurate —
-it is to be *identically computable*. Conformance level SB-C2 requires
-bit-equality against the pinned vectors.
+**Starboard-Pc is defined as this finite expression.** Unlike an
+equivalent-area series (Chan), Patera's error is set by the node count, not
+the covariance shape: `N = 32` matches an independent adaptive quadrature to
+~1e-12 relative at meaningful Pc for aspect ratios up to 50:1 — the elongated,
+along-track-dominated covariance that is the LEO norm and on which Chan's
+circularization erred by 15–43% (`conformance/validation`). Conformance level
+SB-C2 requires bit-equality against the pinned vectors.
 
-*Sanity anchor (informative):* for zero miss and isotropic σ,
-Pc = 1 − e^(−R²/2σ²), the exact Rayleigh result. And symmetric by
-construction: every term depends on squares/quadratics of the relative
-geometry, so `Pc(A,B)` and `Pc(B,A)` are the same bits.
+*Sanity anchor (informative):* for zero miss and isotropic σ, Patera returns
+`1 − e^(−R²/2σ²)`, the exact Rayleigh result (and matches the old Chan series
+there to ~1e-15). Symmetric by construction: every term depends on
+squares/quadratics of the relative geometry, so `Pc(A,B)` and `Pc(B,A)` are
+the same bits.
 
 ### 4.6 The pinned transcendentals: `canon_exp`, `canon_sincos`
 
@@ -354,16 +366,19 @@ Both are defined operation-by-operation in `canon.hpp`:
 
 * **`canon_exp`** — Cody-Waite range reduction with the fdlibm ln 2 split,
   a 13-term Taylor polynomial in pinned Horner order, an exact `ldexp`
-  scale. Used by Starboard-Pc. This is the **only** transcendental on the
-  verdict path: the canonical propagator (§4.2) and the rule predicates
-  (§5) are trig-free by construction.
+  scale. Used by the Patera Pc integrand.
 * **`canon_sincos`** — three-part Cody-Waite π/2 reduction (each split
   constant has its low 27 mantissa bits zeroed, so the products `k·PIO2_HI`
   and `k·PIO2_MED` are *exact* for |k| < 2²⁶), Taylor kernels on
   |r| ≤ π/4 in pinned Horner order, quadrant selection. Domain |x| ≤ 2²⁰.
-  Used by the Clohessy-Wiltshire **maneuver** dynamics (§6, `frames.hpp`),
-  which are off the bit-exact verdict path but pinned anyway so maneuvers
-  are reproducible.
+  Used by the Patera Pc contour node angles (§4.5) and the Clohessy-Wiltshire
+  maneuver dynamics (§6, `frames.hpp`).
+
+These two are the only transcendentals a verdict depends on. Everything else
+on the verdict path — the canonical propagator (§4.2) and the Layer-1 rule
+predicates (§5) — is trig-free and exp-free by construction, using only
+`+ − × ÷ sqrt`. `canon_sincos` reaches the bit-exact verdict path in exactly
+one place: the Pc contour (§4.5).
 
 Library `exp`/`sin`/`cos` MUST NOT be substituted — no libm guarantees
 correct rounding, and one ulp of drift near a threshold is a cross-vendor
@@ -383,6 +398,46 @@ The second clause is a hard floor: an optimistic covariance is never allowed
 to waive a predicted sub-kilometre miss. (With the canonical 20 m combined
 hard body, Pc = 10⁻⁴ is reachable only for misses ≲ 1.2 km under
 worst-case σ — the thresholds are mutually consistent by construction.)
+
+### 4.8 Broad-phase (constellation scale)
+
+Screening a catalog of N objects pairwise is O(N²) — infeasible at 10⁴–10⁵.
+The **broad-phase** (`broadphase.hpp`) cheaply produces a candidate pair list
+that is a strict **superset** of every pair the pairwise search (§4.2a) would
+declare a conjunction, so the expensive per-pair work runs only on candidates.
+
+**Stage 1 — radial-band sweep (normative, unconditionally complete).** Each
+object gets a radial shell `[periapsis − M, apoapsis + M]` from the same
+vis-viva `radial_bounds` the pairwise search uses; a pair is a candidate iff
+its padded shells overlap. Sort by lower edge and sweep. With margin
+`M = R_SCREEN`, recall is **1.0 unconditionally**: the pairwise search keeps a
+pair only after its own ring gate (radial-interval separation ≤ R_SCREEN), and
+two shells padded by M each overlap whenever that separation < 2M = 2·R_SCREEN
+> R_SCREEN — so Stage 1's gate is a strict relaxation of the search's own gate,
+computed by the identical function on the identical canonical state. It cannot
+drop a pair the search keeps, for any speed/eccentricity/geometry (SB-020).
+
+Unlike the verdict path, the broad-phase need **not** be bit-identical across
+implementations: it only selects which pairs to screen; the per-pair verdict
+stays deterministic and both craft still agree. Completeness is *per-craft*
+(never miss a neighbour of self), which the superset property gives.
+
+**Stage 2 — temporal spatial-hash (informative; the constant-factor pruner).**
+Stage 1 decides in O(N log N) but emits a constant fraction (~7.5%) of N²
+candidates on a dense band. Stage 2 samples each object's arc on the 32 s
+grid, hashes the samples into cells of size `D = R_SCREEN + (v_max_a +
+v_max_b)·(SCREEN_STEP/2)`, and pairs objects sharing a cell-neighbourhood at
+the same slice. Using each object's provable periapsis speed (vis-viva) for
+`v_max` makes the capture radius a true upper bound, so Stage 2 is also
+unconditionally complete — no hardcoded speed limit. It **decides** in
+O(N·slices) — near-linear — and cuts the candidate count ~30× further (to
+~2.5×10⁻³ of N² at 32 s slices; finer slices do better), at recall 1.0
+(`conformance/validation/scale_demo`). The candidate *count* remains a
+constant fraction of N²: a dense fixed-altitude shell genuinely contains
+Θ(N²) near pairs (physical, not an algorithm limit), so the win is a large
+constant-factor reduction plus near-linear decision cost, not an asymptotic
+change. The flight-grade allocation-free (fixed-capacity, sort-based) Stage 2
+is the identified productization step.
 
 ## 5. Layer 1 — the Rules of the Orbital Road
 
@@ -728,7 +783,7 @@ are off-network at the identifier layer, before any verdict is compared.
 
 The conformance suite (`conformance/`, [`CONFORMANCE.md`](CONFORMANCE.md))
 is the operational definition of "Starboard compatible": SB-C1 (verdict
-conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…019,
+conformance) and SB-C2 (bit conformance) against pinned vectors SB-001…020,
 covering every rule, every degenerate geometry, the trust downgrades, the
 3-body cascade, the end-to-end orbital search, the crypto stack, and the
 Theorem 1/2 properties directly. SB-C2's evidence artifact is the `--bits`
@@ -767,7 +822,7 @@ the moat. (Business consequences: [`STRATEGY.md`](STRATEGY.md).)
 | `t_ca` | time to closest approach (s) |
 | `d, miss` | miss distance / vector at TCA |
 | `C` | combined position covariance (GCRF, m²) |
-| `u, v` | Chan series arguments (hard-body area / Mahalanobis miss) |
+| `L` | 2×2 Cholesky factor of C2⁻¹ (Pc whitening) |
 | `Pc` | Starboard probability of collision (§4.5) |
 | `n` | reference mean motion (rad/s) |
 | `Φ_rr…Φ_vv` | CW state-transition blocks |
@@ -802,8 +857,19 @@ of km within an orbit) is replaced by a **two-body + J2 fixed-step
 propagator** over a **bounded 1024 s arc** (§4.2), where the total
 dynamics-model error is ~1 m — inside the covariance, so "determinism
 survives uncertainty" is now true of physics, not of an extrapolated
-fiction. The analytic Kepler solver and its `canon_sincos` dependency on the
-verdict path are retired (`canon_exp` is now the sole verdict-path
-transcendental; `canon_sincos` remains for CW maneuvers). Draft revisions
-before first publication share `RULESET_ID`; the id-bump discipline (§11,
-§9.3) starts at publication.
+fiction. The analytic Kepler solver is retired.
+
+**v0.4 → v0.5:** the Pc kernel. An independent adaptive-quadrature validator
+(`conformance/validation`) showed Chan's equivalent-area series erred by
+15–43% on elongated/correlated covariance — the along-track-dominated LEO
+norm — and that this is a circularization *method* error (series order 24→80
+changes nothing), not truncation. Replaced by **Patera's divergence-theorem
+contour integral** (`PATERA_NODES = 32`, §4.5), whose error is set by node
+count not covariance shape (~1e-12 vs the reference at any aspect ratio). This
+re-introduces `canon_sincos` onto the verdict path (the contour node angles),
+so a verdict now depends on both pinned transcendentals; Pc bits change for
+non-isotropic covariance and all anchors were regenerated. Added the
+constellation-scale **broad-phase** (§4.8: radial-band Stage 1, recall = 1.0
+unconditional) and the Pc accuracy validator as a deliverable. Draft
+revisions before first publication share `RULESET_ID`; the id-bump discipline
+(§11, §9.3) starts at publication.
