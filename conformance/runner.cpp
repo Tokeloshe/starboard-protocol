@@ -331,32 +331,50 @@ void sb011() {
 // ---------------------------------------------------------------------------
 // SB-012  swap-invariance sweep: 4096 pseudo-random geometries (fixed LCG).
 //         Empirical pin of Theorem 1: totality + agreement in EVERY case.
+//
+// The draws are hoisted into named locals BEFORE any constructor call:
+// C++ leaves argument evaluation order unspecified, and a side-effecting
+// generator inside an argument list produces different populations on
+// different compilers (found by tools/bitcheck.sh — gcc and clang really do
+// disagree there). Sequencing by declaration makes the sweep well-defined.
 // ---------------------------------------------------------------------------
+uint64_t lcg_next(uint64_t s) {
+    return s * 6364136223846793005ull + 1442695040888963407ull;
+}
+
+void make_sweep_pair(int i, uint64_t* s, CraftDescriptor* a,
+                     CraftDescriptor* b) {
+    const auto rnd = [s]() {
+        *s = lcg_next(*s);
+        return static_cast<double>(*s >> 11) / 9007199254740992.0; // [0,1)
+    };
+    const auto rv = [&rnd]() { return 2.0 * rnd() - 1.0; };
+    char ida[16], idb[16];
+    std::snprintf(ida, sizeof(ida), "20%02d-%03dA", i % 27, i % 999);
+    std::snprintf(idb, sizeof(idb), "20%02d-%03dB", (i * 7) % 27,
+                  (i * 13) % 999);
+    const double pax = rv() * 5.0e4, pay = rv() * 5.0e4;
+    const double paz = R_LEO + rv() * 5.0e4;
+    const double vax = rv() * V_LEO, vay = rv() * V_LEO, vaz = rv() * 100.0;
+    const double cva = 1.0e3 + rnd() * 1.0e6;
+    *a = mk(ida, static_cast<Tier>(i % 4), (i % 3) != 0,
+            static_cast<TrustLevel>(i % 3), Vec3(pax, pay, paz),
+            Vec3(vax, vay, vaz), cva);
+    const double pbx = rv() * 5.0e4, pby = rv() * 5.0e4;
+    const double pbz = R_LEO + rv() * 5.0e4;
+    const double vbx = rv() * V_LEO, vby = rv() * V_LEO, vbz = rv() * 100.0;
+    const double cvb = 1.0e3 + rnd() * 1.0e6;
+    *b = mk(idb, static_cast<Tier>((i / 4) % 4), (i % 5) != 0,
+            static_cast<TrustLevel>((i / 3) % 3), Vec3(pbx, pby, pbz),
+            Vec3(vbx, vby, vbz), cvb);
+}
+
 void sb012() {
     uint64_t s = 0x5EEDull;
-    const auto rnd = [&s]() {
-        s = s * 6364136223846793005ull + 1442695040888963407ull;
-        return static_cast<double>(s >> 11) / 9007199254740992.0; // [0,1)
-    };
     bool ok = true;
     for (int i = 0; i < 4096 && ok; ++i) {
-        char ida[16], idb[16];
-        std::snprintf(ida, sizeof(ida), "20%02d-%03dA", i % 27, i % 999);
-        std::snprintf(idb, sizeof(idb), "20%02d-%03dB", (i * 7) % 27,
-                      (i * 13) % 999);
-        const auto rv = [&rnd]() { return 2.0 * rnd() - 1.0; };
-        const CraftDescriptor a = mk(
-            ida, static_cast<Tier>(i % 4), (i % 3) != 0,
-            static_cast<TrustLevel>(i % 3),
-            Vec3(rv() * 5.0e4, rv() * 5.0e4, R_LEO + rv() * 5.0e4),
-            Vec3(rv() * V_LEO, rv() * V_LEO, rv() * 100.0),
-            1.0e3 + rnd() * 1.0e6);
-        const CraftDescriptor b = mk(
-            idb, static_cast<Tier>((i / 4) % 4), (i % 5) != 0,
-            static_cast<TrustLevel>((i / 3) % 3),
-            Vec3(rv() * 5.0e4, rv() * 5.0e4, R_LEO + rv() * 5.0e4),
-            Vec3(rv() * V_LEO, rv() * V_LEO, rv() * 100.0),
-            1.0e3 + rnd() * 1.0e6);
+        CraftDescriptor a, b;
+        make_sweep_pair(i, &s, &a, &b);
         const PairResult r = run_pair(a, b);
         const bool named_one =
             id_equal(r.v_ab.give_way_id, a.object_id) ||
@@ -463,9 +481,124 @@ void sb014() {
            closed);
 }
 
+// ---------------------------------------------------------------------------
+// --bits: the SB-C2 bit transcript. Emits the bit patterns of every pinned
+// quantity plus FNV-1a fold digests over dense sweeps (thousands of
+// intermediate values each), so ANY arithmetic divergence between two
+// builds/compilers/machines — not just at the anchors — changes the output.
+// tools/bitcheck.sh diffs this against conformance/expected_bits.txt across
+// the toolchain matrix. The transcript is normative for SB-C2.
+// ---------------------------------------------------------------------------
+struct Fold {
+    uint64_t h = 14695981039346656037ull;
+    void add(uint64_t v) {
+        for (int i = 0; i < 8; ++i) {
+            h ^= (v >> (8 * i)) & 0xFFull;
+            h *= 1099511628211ull;
+        }
+    }
+    void add(double d) { add(bits_of(d)); }
+    void add(const Vec3& v) { add(v.x); add(v.y); add(v.z); }
+};
+
+void emit_bits() {
+    std::printf("starboard-bit-transcript v1 ruleset %08X\n", canon::RULESET_ID);
+
+    // Pinned transcendentals: explicit anchors + dense fold.
+    std::printf("exp(-0.5)      %016llX\n",
+        static_cast<unsigned long long>(bits_of(canon::canon_exp(-0.5))));
+    std::printf("sin(1.0)       %016llX\n",
+        static_cast<unsigned long long>(bits_of(canon::canon_sin(1.0))));
+    std::printf("cos(1.0)       %016llX\n",
+        static_cast<unsigned long long>(bits_of(canon::canon_cos(1.0))));
+    Fold ft;
+    for (int i = -4096; i <= 4096; ++i) {
+        const double x = 0.017 * static_cast<double>(i);
+        double s, c;
+        canon::canon_sincos(x, &s, &c);
+        ft.add(s);
+        ft.add(c);
+        if (x <= 0.0) { ft.add(canon::canon_exp(x)); }
+    }
+    std::printf("transcendental %016llX\n",
+                static_cast<unsigned long long>(ft.h));
+
+    // Canonical ephemeris: fold the SB-013 pair across a dense time grid.
+    const double R = 6.93e6;
+    const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
+    const CraftState ka = canonicalize(circular(R, 0.0, -n_ref * 2700.0));
+    const double r2 = R + 150.0;
+    const double n2 = std::sqrt(canon::MU_EARTH_M3S2 / (r2 * r2 * r2));
+    const CraftState kb =
+        canonicalize(circular(r2, 0.25 * canon::PI, -n2 * 2700.0));
+    Fold fk;
+    for (int i = 0; i <= 400; ++i) {
+        const double t = 43.0 * static_cast<double>(i);
+        const CraftState sa = kepler_propagate(ka, t);
+        const CraftState sb = kepler_propagate(kb, t);
+        fk.add(sa.position); fk.add(sa.velocity);
+        fk.add(sb.position); fk.add(sb.velocity);
+    }
+    std::printf("ephemeris      %016llX\n",
+                static_cast<unsigned long long>(fk.h));
+
+    // End-to-end search anchors.
+    OrbitConjunction oc;
+    Sym33 cov = Sym33::diagonal(9.0e4);
+    (void)screen_orbits(ka, kb, cov, cov, 20.0,
+                        3.0 * (2.0 * canon::PI / n_ref), &oc);
+    std::printf("search.tca     %016llX\n",
+        static_cast<unsigned long long>(bits_of(oc.conj.t_ca)));
+    std::printf("search.miss    %016llX\n",
+        static_cast<unsigned long long>(bits_of(oc.conj.miss_distance)));
+    std::printf("search.pc      %016llX\n",
+        static_cast<unsigned long long>(bits_of(oc.conj.pc)));
+
+    // Pc kernel: fold a miss x sigma x hbr parameter sweep.
+    Fold fp;
+    for (int im = 1; im <= 20; ++im) {
+        for (int is = 1; is <= 20; ++is) {
+            Conjunction c;
+            c.detected = true;
+            c.t_ca = 100.0;
+            c.miss_vector = Vec3(0.0, 0.0, 128.0 * static_cast<double>(im));
+            c.miss_distance = c.miss_vector.norm();
+            c.rel_velocity = Vec3(7000.0, -3000.0, 0.0);
+            c.pc = 0.0;
+            const Sym33 cc =
+                Sym33::diagonal(1024.0 * static_cast<double>(is * is));
+            fp.add(starboard_pc(c, cc, 5.0 + 2.0 * static_cast<double>(im)));
+        }
+    }
+    std::printf("pc-kernel      %016llX\n",
+                static_cast<unsigned long long>(fp.h));
+
+    // Verdict sweep: fold the full SB-012 LCG population's verdicts.
+    Fold fv;
+    uint64_t s = 0x5EEDull;
+    for (int i = 0; i < 4096; ++i) {
+        CraftDescriptor a, b;
+        make_sweep_pair(i, &s, &a, &b);
+        const PairResult r = run_pair(a, b);
+        fv.add(r.v_ab.conjunction_id);
+        fv.add(static_cast<uint64_t>(r.v_ab.deciding_rule));
+        fv.add(r.c_ab.pc);
+        for (int j = 0; j < 12; ++j) {
+            fv.add(static_cast<uint64_t>(
+                static_cast<unsigned char>(r.v_ab.give_way_id.c[j])));
+        }
+    }
+    std::printf("verdict-sweep  %016llX\n",
+                static_cast<unsigned long long>(fv.h));
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if ((argc > 1) && (std::strcmp(argv[1], "--bits") == 0)) {
+        emit_bits();
+        return 0;
+    }
     std::printf("Starboard conformance suite  (ruleset SB/1, id 0x%08X)\n\n",
                 canon::RULESET_ID);
     sb001();
