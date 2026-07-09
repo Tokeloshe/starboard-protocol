@@ -92,9 +92,11 @@ property — would raise assurance beyond by-hand review.
 
 ## 9. Trademark and name clearance  **[eco]**
 
-`Starboard Certified™` is used throughout as the conformance mark, but the
-wordmark is not yet filed and the name is not cleared (STRATEGY §8). Public
-launch stakes the name.
+`Starboard Certified™` is used throughout as an **unregistered** mark (the
+`™` marking is legitimate without filing). The project launched publicly
+ahead of registration by explicit decision (STRATEGY §9): a mark is worth
+filing when there is adoption to defend. Revisit on the first external
+adopter, certification inquiry, or confusing fork.
 
 ## 10. Cross-language port scope  **[impl]**
 

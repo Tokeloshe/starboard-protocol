@@ -172,32 +172,29 @@ make it unforkable.** Engineering rigor and defensibility are one artifact.
 - [ ] Registry key ceremony design before any flight use of signed
       assertions (DESIGN.md §8.2).
 
-## 9. Pre-public launch checklist
+## 9. Launch posture (decided)
 
-The engineering is launch-ready (ruleset SB/1 spec v0.5: implemented, proven,
-conformance-tested, cross-language bit-identical — see `CHANGELOG.md`). Going
-public is a **business** decision with one hard-to-reverse step. Sequence:
+Published as an **open v0.5 draft reference**, deliberately ahead of any
+trademark registration. Rationale, honestly recorded:
 
-**Before flipping the repo public (do these first):**
-- [ ] **File the `Starboard` wordmark** (classes: software; testing/
-      certification services) — or lock the final name and file it. Publishing
-      stakes the name; the mark should lead, per §8. This is the gating item.
-- [ ] Reserve the domain + the `Starboard Certified™` mark alongside it.
-- [ ] Confirm the CC BY 4.0 (spec) / AGPL-3.0 (code) / commercial split is
-      exactly as intended in every file header (SPDX audit — currently clean).
-- [ ] Decide the contribution policy is visible: a `CONTRIBUTING.md` stating
-      **no outside code without a CLA** (protects dual-licensing).
+- **Authorship provenance needs no filing.** The dated git history, SPDX
+  headers, and license notices establish it at zero cost.
+- **A trademark earns its keep only once there is adoption to defend.**
+  Registering pre-traction is paying to protect something with no users; the
+  `™` (unregistered) marking on `Starboard Certified™` is legitimate as-is,
+  and registration remains available later — **revisit if and when** a first
+  external adopter, certification inquiry, or fork-with-confusion appears.
+- **The realistic near-term value is credibility and contribution**, not a
+  toll booth: putting the deterministic-agreement + conformance idea in front
+  of the existing efforts (Space Safety Coalition best practices, OSC/TraCSS
+  interoperability work, CCSDS/ISO, an AMOS/IAC paper) — where it fills a gap
+  none of them currently covers — beats defending a solo standard nobody has
+  adopted yet.
 
-**The public flip (reversible-ish → treat as one-way):**
-- [ ] Merge the refinement branch to `main` (a PR is the natural vehicle;
-      open it when you're ready — it is not opened automatically).
-- [ ] Make the repository public. *(Irreversible in practice: once cloned/
-      indexed it is out. Do only after the wordmark step.)*
-- [ ] Tag `v0.5` and publish `CHANGELOG.md` as the release notes.
+Standing protections that stay in force regardless: sole copyright, CLA-gated
+contributions (`CONTRIBUTING.md`), the dual license, and the conformance suite
+as the testable definition of "compatible."
 
-**Immediately after (the adoption flywheel, §6):**
-- [ ] Record the 60-second demo (`examples/crossing_demo.cpp`) — the pitch.
-- [ ] Approach one lighthouse adopter and one data provider in parallel.
-
-The repository stays **private** until the wordmark step is complete. Nothing
-in this checklist is executed automatically; each is the author's call.
+**Post-launch flywheel (§6):** record the 60-second demo, approach one
+lighthouse adopter (cubesat/university mission) and one data provider in
+parallel, and submit the spec where the standards conversation already lives.

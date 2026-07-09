@@ -6,3 +6,4 @@ build/
 compile_commands.json
 conformance/validation/*.csv
 __pycache__/
+ports/c/sb_bits
