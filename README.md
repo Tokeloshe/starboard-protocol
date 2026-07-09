@@ -105,8 +105,12 @@ starboard-protocol/
 ```
 
 The core is header-only, dependency-free, allocation-free, exception-free,
-and avoids every source of cross-platform float nondeterminism on the
-verdict path — written to be portable to a radiation-hardened flight MCU.
+and avoids every source of cross-platform float nondeterminism on the verdict
+path — the C++17 reference is Starlink-class (SpaceX flight software is C++).
+A MISRA-C99 port (CubeSat / rad-hard-MCU / NASA cFS class) is being brought up
+as an independent, bit-for-bit second implementation, cross-checked against
+the C++ transcript. On-target hardware and fixed-point validation remain open
+(`docs/OPEN-PROBLEMS.md`).
 
 ## How the author is paid — forever
 

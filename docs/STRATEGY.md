@@ -63,11 +63,13 @@ Reference code is **AGPL-3.0-or-later**. Operators will not open their
 flight software, so they buy a **commercial license** (per-fleet, annual)
 that waives copyleft. The MongoDB/Qt playbook; recurs because licenses are
 per-fleet and time-bound, and every new constellation is a new customer.
-The reference implementation is deliberately *worth licensing*: header-only,
-dependency-free, allocation-free, MISRA-aware, with the bit-determinism
-work (quantization lattice, pinned transcendental, strict arithmetic
-profile) already done — months of specialist effort a vendor would rather
-buy than replicate.
+The reference implementation is deliberately *worth licensing*: header-only
+C++17 (Starlink-class), with a MISRA-C99 port (CubeSat / rad-hard-MCU / NASA
+cFS class) in preparation as an independent, bit-for-bit second
+implementation, dependency-free, allocation-free, with the bit-determinism
+work (quantization lattice, pinned transcendentals, strict arithmetic
+profile, cross-compiler bit-agreement) already done — months of specialist
+effort a vendor would rather buy than replicate.
 
 ### Stream 2 — `Starboard Certified™` conformance (durable + defensible)
 Trademark + the conformance suite ([`CONFORMANCE.md`](CONFORMANCE.md)).
