@@ -146,6 +146,15 @@ Patera Pc contour (§4.5); everywhere else it is `sqrt`/`canon_exp`/arithmetic
 by construction. Off the verdict path (maneuver planning, §6) normal libm is
 permitted; those quantities are checked to tolerances, not bits.
 
+*Enforcing no-contraction (normative).* A fused multiply-add changes
+verdict-path bits (a demonstrated `-mfma` build shifts the `pc-kernel` and
+`verdict-sweep` folds), so a conformant build MUST disable FP contraction by
+**both** mechanisms available to it: the in-source `#pragma STDC FP_CONTRACT
+OFF` (honored by Clang and conforming C11 compilers — it holds even under
+`-mfma`) **and**, on compilers whose C frontend ignores that pragma (GCC),
+the `-ffp-contract=off` flag. The reference C++ build and the C99 port both
+apply the belt-and-suspenders combination.
+
 ### 3.6 Canonical constants
 
 All conformant implementations MUST use exactly these values
@@ -788,8 +797,12 @@ covering every rule, every degenerate geometry, the trust downgrades, the
 3-body cascade, the end-to-end orbital search, the crypto stack, and the
 Theorem 1/2 properties directly. SB-C2's evidence artifact is the `--bits`
 transcript (`conformance/expected_bits.txt`): fold digests over tens of
-thousands of intermediate quantities, checked identical across the full
-compiler/optimization matrix by `tools/bitcheck.sh`.
+thousands of intermediate quantities, checked identical by `tools/bitcheck.sh`
+across the full compiler/optimization matrix **and against a second,
+independent implementation in a different language** — the MISRA-C99 port in
+`ports/c/`. Cross-language byte-identity (C++ and C, both across gcc/clang and
+−O0…−O3) is the strongest possible evidence that the spec, not an
+implementation accident, defines the bits.
 
 ## 11. Why forking loses *(informative)*
 
@@ -870,6 +883,10 @@ re-introduces `canon_sincos` onto the verdict path (the contour node angles),
 so a verdict now depends on both pinned transcendentals; Pc bits change for
 non-isotropic covariance and all anchors were regenerated. Added the
 constellation-scale **broad-phase** (§4.8: radial-band Stage 1, recall = 1.0
-unconditional) and the Pc accuracy validator as a deliverable. Draft
-revisions before first publication share `RULESET_ID`; the id-bump discipline
-(§11, §9.3) starts at publication.
+unconditional) and the Pc accuracy validator as a deliverable. Also landed an
+independent **MISRA-C99 port** (`ports/c/`) that reproduces the `--bits`
+transcript byte-for-byte (cross-language SB-C2; §10), and pinned the
+no-FP-contraction requirement in-source (`#pragma STDC FP_CONTRACT OFF` plus
+the build flag, §3.5) so bit-agreement no longer depends on a remembered
+compiler option. Draft revisions before first publication share `RULESET_ID`;
+the id-bump discipline (§11, §9.3) starts at publication.

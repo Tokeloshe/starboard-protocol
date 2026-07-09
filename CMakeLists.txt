@@ -23,3 +23,8 @@ enable_testing()
 add_executable(starboard_conformance conformance/runner.cpp)
 target_link_libraries(starboard_conformance PRIVATE starboard_core)
 add_test(NAME conformance COMMAND starboard_conformance)
+
+# Cross-language SB-C2: the independent MISRA-C99 port (ports/c/) must
+# reproduce the pinned --bits transcript byte-for-byte.
+add_test(NAME cport_bitmatch
+         COMMAND make -C ${CMAKE_SOURCE_DIR}/ports/c check)

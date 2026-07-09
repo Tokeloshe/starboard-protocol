@@ -99,7 +99,8 @@ starboard-protocol/
 │   └── multibody.hpp      Multi-craft window resolution
 ├── conformance/           Vectors SB-001..SB-020 + bit transcript (normative)
 │   └── validation/        Independent Pc reference + broad-phase scale demo
-├── tools/bitcheck.sh      SB-C2 cross-toolchain bit-agreement matrix
+├── ports/c/               Independent MISRA-C99 port (cross-language SB-C2)
+├── tools/bitcheck.sh      SB-C2 matrix: C++ cross-compiler + C99 cross-language
 ├── examples/crossing_demo.cpp
 └── CMakeLists.txt
 ```
@@ -107,10 +108,12 @@ starboard-protocol/
 The core is header-only, dependency-free, allocation-free, exception-free,
 and avoids every source of cross-platform float nondeterminism on the verdict
 path — the C++17 reference is Starlink-class (SpaceX flight software is C++).
-A MISRA-C99 port (CubeSat / rad-hard-MCU / NASA cFS class) is being brought up
-as an independent, bit-for-bit second implementation, cross-checked against
-the C++ transcript. On-target hardware and fixed-point validation remain open
-(`docs/OPEN-PROBLEMS.md`).
+It ships with an **independent MISRA-C99 port** (`ports/c/`, CubeSat /
+rad-hard-MCU / NASA cFS class) that reproduces the C++ `--bits` transcript
+**byte-for-byte** — 29 builds (C++ and C, gcc/clang, −O0…−O3) collapse to a
+single hash. That cross-*language* agreement is the strongest evidence that
+the spec, not an implementation accident, defines the bits. On-target hardware
+and fixed-point validation remain open (`docs/OPEN-PROBLEMS.md`).
 
 ## How the author is paid — forever
 

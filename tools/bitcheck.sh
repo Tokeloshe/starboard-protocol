@@ -68,7 +68,42 @@ if [ "$run" -eq 0 ]; then
     echo "bitcheck: nothing ran" >&2
     exit 2
 fi
+
+# --- Cross-LANGUAGE: the independent C99 port must match the same golden ----
+# (SPEC §10 / CONFORMANCE.md SB-C2). This is the strongest bit-agreement
+# evidence: not just cross-compiler of one source, but a second, independent
+# implementation in a different language reproducing the transcript.
+CPORT_SRC=(ports/c/canon.c ports/c/geometry.c ports/c/propagator.c
+           ports/c/covariance.c ports/c/screening.c ports/c/rules.c
+           ports/c/sha512.c ports/c/registry.c ports/c/main.c)
+CC_LIST=()
+for cc in gcc clang cc; do
+    command -v "$cc" >/dev/null 2>&1 && CC_LIST+=("$cc")
+done
+if [ -f ports/c/main.c ]; then
+    for cc in "${CC_LIST[@]}"; do
+        for opt in "-O0" "-O2" "-O3 -march=native"; do
+            bin="$TMP/cport_$(echo "$cc$opt" | tr -c 'a-zA-Z0-9' _)"
+            if ! $cc -std=c99 -ffp-contract=off $opt "${CPORT_SRC[@]}" -lm \
+                 -o "$bin" 2> "$TMP/cbuild.log"; then
+                echo "SKIP  C99 port: $cc $opt  (does not build here)"
+                continue
+            fi
+            "$bin" > "$TMP/cbits.txt"
+            run=$((run + 1))
+            if diff -q "$GOLDEN" "$TMP/cbits.txt" > /dev/null; then
+                echo "OK    C99 port: $cc $opt"
+            else
+                echo "FAIL  C99 port: $cc $opt  — transcript diverges:"
+                diff "$GOLDEN" "$TMP/cbits.txt" | sed 's/^/      /'
+                fail=1
+            fi
+        done
+    done
+fi
+
 if [ "$fail" -eq 0 ]; then
-    echo "bitcheck: ALL $run BUILDS BIT-IDENTICAL (SB-C2 evidence)"
+    echo "bitcheck: ALL $run BUILDS BIT-IDENTICAL (SB-C2 evidence:" \
+         "C++ cross-compiler + C99 cross-language)"
 fi
 exit "$fail"

@@ -29,15 +29,18 @@ expected `detected`/`actionable` flags, `deciding_rule`, `give_way_id`,
 ### SB-C2 — Bit conformance (MUST for flight software)
 
 Additionally, bit-equality on the pinned anchors — Starboard-Pc for SB-001
-(`0x3F5117B3E92585E2`), the `canon_exp`/`canon_sincos` anchors (SB-010,
+(`0x3F5117B3E9258534`), the `canon_exp`/`canon_sincos` anchors (SB-010,
 SB-014), the SB-013 search TCA/Pc, and every conjunction id — **and** on
 the full `--bits` transcript: the runner's `--bits` mode emits
 `conformance/expected_bits.txt`, whose fold digests cover dense sweeps of
 the transcendentals, the ephemeris, the Pc kernel, the 4096-pair verdict
 population, and the registry hash stack. `tools/bitcheck.sh` builds the
-runner across every available compiler × optimization level and diffs the
-transcript; the reference matrix (g++ 13 and clang++ 18 at -O0 through
--O3 -march=native, 20 builds) is bit-identical. Its first run caught a
+runner across every available compiler × optimization level, diffs the
+transcript, **and additionally builds the independent MISRA-C99 port
+(`ports/c/`) and diffs its transcript against the same golden** — so SB-C2
+is proven cross-compiler AND cross-language. The reference matrix (g++ 13
+and clang++ 18 for C++, gcc/clang/cc for C, each at -O0 through
+-O3 -march=native — 29 builds) is byte-identical. Its first run caught a
 real divergence — unspecified C++ argument-evaluation order in the test
 harness itself — which is exactly the class of bug this level exists to
 catch. Maneuver quantities (Δv vectors, return plans) are checked to 10⁻⁹

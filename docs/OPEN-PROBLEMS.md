@@ -98,10 +98,13 @@ launch stakes the name.
 
 ## 10. Cross-language port scope  **[impl]**
 
-The C99 port targets the **verdict path** plus SHA-512 / registry hashing —
-the surface whose cross-implementation bit-agreement is the product claim. It
-does **not** cover Ed25519 verification or the CW maneuver code; those share
-the C++ reference's guarantees but are not (yet) cross-language bit-checked.
+The MISRA-C99 port (`ports/c/`) covers the **verdict path** plus SHA-512 /
+registry hashing — the surface whose cross-implementation bit-agreement is the
+product claim — and reproduces the C++ transcript byte-for-byte (29-build
+matrix). It does **not** yet cover Ed25519 verification, the CW maneuver code,
+or the broad-phase; those share the C++ reference's guarantees but are not (yet)
+cross-language bit-checked. Extending the port to those, and to a fixed-point
+profile, is the remaining implementation work.
 
 ---
 

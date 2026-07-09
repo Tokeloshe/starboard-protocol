@@ -64,12 +64,12 @@ flight software, so they buy a **commercial license** (per-fleet, annual)
 that waives copyleft. The MongoDB/Qt playbook; recurs because licenses are
 per-fleet and time-bound, and every new constellation is a new customer.
 The reference implementation is deliberately *worth licensing*: header-only
-C++17 (Starlink-class), with a MISRA-C99 port (CubeSat / rad-hard-MCU / NASA
-cFS class) in preparation as an independent, bit-for-bit second
-implementation, dependency-free, allocation-free, with the bit-determinism
-work (quantization lattice, pinned transcendentals, strict arithmetic
-profile, cross-compiler bit-agreement) already done — months of specialist
-effort a vendor would rather buy than replicate.
+C++17 (Starlink-class) **and** an independent MISRA-C99 port (CubeSat /
+rad-hard-MCU / NASA cFS class) that agrees with it byte-for-byte,
+dependency-free, allocation-free, with the bit-determinism work (quantization
+lattice, pinned transcendentals, strict arithmetic profile, cross-compiler
+AND cross-language bit-agreement) already done — months of specialist effort
+a vendor would rather buy than replicate.
 
 ### Stream 2 — `Starboard Certified™` conformance (durable + defensible)
 Trademark + the conformance suite ([`CONFORMANCE.md`](CONFORMANCE.md)).
