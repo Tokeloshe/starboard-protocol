@@ -37,11 +37,15 @@
 namespace starboard {
 
 // One detected pairwise conjunction inside a window. `a` and `b` index the
-// window's craft table; `conj` is expressed with `a` as self.
+// window's craft table; `conj` is expressed with `a` as self. The TCA states
+// (from screening) ride along because rule geometry is evaluated at the
+// encounter, and each pair in the window has its own TCA.
 struct WindowEntry {
     uint32_t    a, b;
     Conjunction conj;
     uint64_t    tca_epoch_ms;
+    CraftState  a_tca;
+    CraftState  b_tca;
 };
 
 struct WindowVerdict {
@@ -100,6 +104,8 @@ inline uint32_t resolve_window(const CraftDescriptor* craft, uint32_t n_craft,
         const WindowEntry& e = entries[i];
         CraftDescriptor a = craft[e.a];
         CraftDescriptor b = craft[e.b];
+        a.state = e.a_tca;
+        b.state = e.b_tca;
 
         WindowVerdict wv;
         const detail::Lock la = locks[e.a];

@@ -43,9 +43,18 @@ struct GiveWayPlan {
 
 // Plan the give-way burn for `self` against a conjunction expressed in
 // self's perspective (miss_vector = other relative to self at TCA).
+//
+// The Hill frame ROTATES with the reference orbit, so the required
+// displacement direction must be expressed in the frame AT TCA (`self_tca`,
+// from screening), while the resulting impulse converts back to ECI through
+// the frame at burn time (`self_now`). Conflating the two frames is only
+// harmless for short leads (n*tau << 1); the screener hands both states over
+// precisely so this is exact at any lead time.
+//
 // `self_is_canonical_lo` = (id_compare(self, other) <= 0); it signs the
 // cross-track fallback in the zero-miss degenerate case.
-inline GiveWayPlan plan_give_way(const CraftState& self,
+inline GiveWayPlan plan_give_way(const CraftState& self_now,
+                                 const CraftState& self_tca,
                                  const Conjunction& conj,
                                  bool self_is_canonical_lo,
                                  double r_safe = canon::R_SAFE_M) {
@@ -61,8 +70,7 @@ inline GiveWayPlan plan_give_way(const CraftState& self,
     }
     plan.required = true;
 
-    const Mat3 basis = hill_basis(self);
-    const double n = mean_motion(self);
+    const double n = mean_motion(self_now);
     const double tau =
         (conj.t_ca > canon::MIN_LEAD_S) ? conj.t_ca : canon::MIN_LEAD_S;
 
@@ -74,12 +82,13 @@ inline GiveWayPlan plan_give_way(const CraftState& self,
         // Degenerate near-zero miss: pinned cross-track push, signed by the
         // canonical order so the two craft push in OPPOSITE directions if
         // both ever maneuver.
-        const Vec3 chat = self.position.cross(self.velocity).normalized();
+        const Vec3 chat =
+            self_now.position.cross(self_now.velocity).normalized();
         u_away_eci = self_is_canonical_lo ? chat : (chat * -1.0);
     }
     const double d_needed = target - conj.miss_distance;
 
-    const Vec3 u_hill = basis.mul(u_away_eci);
+    const Vec3 u_hill = hill_basis(self_tca).mul(u_away_eci);
     const Mat3 phi = cw_phi_rv(n, tau);
     const Vec3 w = phi.tmul(u_hill);          // Phi_rv' u
     const double w2 = w.dot(w);
@@ -91,7 +100,7 @@ inline GiveWayPlan plan_give_way(const CraftState& self,
         // cross-track u; fall back to the linear-motion impulse.
         plan.dv_hill = u_hill * (d_needed / tau);
     }
-    plan.dv_eci = basis.tmul(plan.dv_hill);
+    plan.dv_eci = hill_basis(self_now).tmul(plan.dv_hill);
     plan.dv_mag = plan.dv_hill.norm();
     plan.displacement_m = phi.mul(plan.dv_hill).dot(u_hill);
     return plan;

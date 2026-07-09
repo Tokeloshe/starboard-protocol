@@ -50,10 +50,18 @@ constexpr double VAR_FLOOR_M2  = 1.0;      // covariance eigenvalue floor (1 m^2
 constexpr double DEFAULT_VAR_M2 = 1.0e6;   // (1 km)^2: conservative default when
                                            // a craft publishes no covariance
 
+// --- §4.2 Canonical ephemeris & conjunction search ---------------------------
+constexpr double SCREEN_STEP_S      = 32.0; // 2^5 s canonical search grid
+constexpr int    TCA_BISECT_ITERS   = 48;   // fixed bisection depth for TCA
+constexpr int    KEPLER_BISECT_ITERS = 48;  // fixed bisection depth, Kepler eq.
+constexpr int    KEPLER_POLISH_ITERS = 3;   // fixed Newton polish, Kepler eq.
+
 // --- §5 Rule predicates ------------------------------------------------------
 constexpr double OVERTAKE_COS   = 0.3826834323650898; // cos(67.5 deg), pinned
 constexpr double EPS_SPEED_MPS  = 0.0625;  // 2^-4 m/s speed-ordering dead-band
-constexpr double EPS_LATERAL_M  = 1.0;     // 2^0 m starboard-side dead-band
+constexpr double EPS_LATERAL_M  = 1.0;     // 2^0 m co-drift bearing dead-band
+constexpr double EPS_BEARING    = 0.0625;  // 2^-4 (~3.6 deg) approach-bearing
+                                           // dead-band, dimensionless sine
 
 // --- §6 Maneuver -------------------------------------------------------------
 constexpr double MANEUVER_MARGIN = 1.25;   // kappa: burn targets kappa*R_SAFE
@@ -110,6 +118,66 @@ inline double canon_exp(double x) {
     p = p * r + 1.0;                                    // 1/1!
     p = p * r + 1.0;                                    // 1/0!
     return std::ldexp(p, static_cast<int>(kd));
+}
+
+// --- §4.6 canon_sincos: the second pinned transcendental pair -----------------
+// sin(x) and cos(x) for |x| <= 2^20 rad, defined operation-by-operation so
+// every conformant implementation computes identical bits. Needed only by the
+// canonical ephemeris (kepler.hpp); the Layer-1 rule predicates remain
+// trig-free. Three-part Cody-Waite reduction by pi/2 (each split constant has
+// its low 27 mantissa bits zeroed, so k*PIO2_HI and k*PIO2_MED are EXACT for
+// |k| < 2^26), then Taylor kernels on |r| <= pi/4 in pinned Horner order.
+// Kernel truncation < 1 ulp; total error ~1-2 ulp. libm sin/cos MUST NOT be
+// substituted on the verdict path.
+inline void canon_sincos(double x, double* sin_out, double* cos_out) {
+    constexpr double INV_PIO2 = 0.6366197723675814;          // pinned literal
+    constexpr double PIO2_HI  = 1.5707963109016418;          // 0x3FF921FB50000000
+    constexpr double PIO2_MED = 1.5893254712295857e-08;      // 0x3E5110B460000000
+    constexpr double PIO2_LO  = 6.123233995736766e-17;       // 0x3C91A62633145C07
+    const double kd = std::nearbyint(x * INV_PIO2);
+    const double r  = ((x - kd * PIO2_HI) - kd * PIO2_MED) - kd * PIO2_LO;
+    const int64_t k = static_cast<int64_t>(kd);
+    const int q = static_cast<int>(((k % 4) + 4) % 4);
+    const double r2 = r * r;
+    // sin kernel: r * P(r^2), coefficients (-1)^n/(2n+1)!, pinned literals.
+    double sp = 2.8114572543455206e-15;                  //  1/17!
+    sp = sp * r2 - 7.647163731819816e-13;                // -1/15!
+    sp = sp * r2 + 1.6059043836821613e-10;               //  1/13!
+    sp = sp * r2 - 2.505210838544172e-08;                // -1/11!
+    sp = sp * r2 + 2.7557319223985893e-06;               //  1/9!
+    sp = sp * r2 - 1.984126984126984e-04;                // -1/7!
+    sp = sp * r2 + 8.333333333333333e-03;                //  1/5!
+    sp = sp * r2 - 1.6666666666666666e-01;               // -1/3!
+    const double s = r + r * (r2 * sp);
+    // cos kernel: Q(r^2), coefficients (-1)^n/(2n)!, pinned literals.
+    double cp = -1.5619206968586225e-16;                 // -1/18!
+    cp = cp * r2 + 4.779477332387385e-14;                //  1/16!
+    cp = cp * r2 - 1.1470745597729725e-11;               // -1/14!
+    cp = cp * r2 + 2.08767569878681e-09;                 //  1/12!
+    cp = cp * r2 - 2.755731922398589e-07;                // -1/10!
+    cp = cp * r2 + 2.48015873015873e-05;                 //  1/8!
+    cp = cp * r2 - 1.388888888888889e-03;                // -1/6!
+    cp = cp * r2 + 4.1666666666666664e-02;               //  1/4!
+    cp = cp * r2 - 0.5;                                  // -1/2!
+    const double c = 1.0 + r2 * cp;
+    switch (q) {
+        case 0:  *sin_out = s;  *cos_out = c;  break;
+        case 1:  *sin_out = c;  *cos_out = -s; break;
+        case 2:  *sin_out = -s; *cos_out = -c; break;
+        default: *sin_out = -c; *cos_out = s;  break;
+    }
+}
+
+inline double canon_sin(double x) {
+    double s, c;
+    canon_sincos(x, &s, &c);
+    return s;
+}
+
+inline double canon_cos(double x) {
+    double s, c;
+    canon_sincos(x, &s, &c);
+    return c;
 }
 
 } // namespace canon

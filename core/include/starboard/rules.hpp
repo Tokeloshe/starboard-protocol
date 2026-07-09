@@ -29,7 +29,9 @@ namespace starboard {
 
 // Everything the ruleset may consult about a craft. All fields are shared
 // knowledge (catalog/registry-backed); `trust` is the local verification
-// outcome for the counterpart's assertion (VERIFIED for self).
+// outcome for the counterpart's assertion (VERIFIED for self). For an
+// actionable conjunction, `state` MUST be the canonical state AT TCA
+// (screening.hpp returns it) — rule geometry describes the encounter.
 struct CraftDescriptor {
     ObjectId   object_id;
     Tier       tier         = Tier::OPERATIONAL;
@@ -93,39 +95,51 @@ inline uint64_t conjunction_id(const ObjectId& a, const ObjectId& b,
 
 namespace detail {
 
-// Rule 3 predicate (SPEC §5.5): does x overtake y? All three conditions must
-// hold, each with a dead-band so quantization noise cannot flip the answer:
-//   (a) x is strictly faster than y      (by more than EPS_SPEED),
-//   (b) x sits in y's stern cone         (within 67.5 deg of -velocity),
-//   (c) the pair is closing.
+// Rule geometry is evaluated at the canonical states AT TCA (SPEC §5.1) and
+// both predicates below are ASYMPTOTE forms: they depend on the (nearly
+// constant) velocities through the encounter, not on where along the
+// approach the evaluation happens — so the answer is epoch-robust as well as
+// swap-deterministic.
+
+// Rule 3 predicate (SPEC §5.5): does x overtake y? Both conditions carry a
+// dead-band so quantization noise cannot flip the answer:
+//   (a) x is strictly faster than y (by more than EPS_SPEED);
+//   (b) x's motion RELATIVE to y is aligned with y's own heading within the
+//       overtake cone (67.5 deg) — i.e. x runs up y's track from astern.
+//       (In the far past x's bearing from y is -(vx-vy): condition (b) is
+//       exactly "x approaches from y's stern sector".)
 inline bool overtakes(const CraftDescriptor& x, const CraftDescriptor& y) {
     const double sx = x.state.velocity.norm();
     const double sy = y.state.velocity.norm();
     if ((sx - sy) <= canon::EPS_SPEED_MPS) { return false; }
     if (sy <= canon::EPS_SPEED_MPS) { return false; }
-
-    const Vec3 d = x.state.position - y.state.position;  // y -> x
-    const double dn = d.norm();
-    if (dn <= canon::EPS_LATERAL_M) { return false; }
-
-    const double along = d.dot(y.state.velocity) / (dn * sy);
-    if (along >= -canon::OVERTAKE_COS) { return false; }  // not astern of y
-
     const Vec3 dv = x.state.velocity - y.state.velocity;
-    return d.dot(dv) < 0.0;                               // closing
+    const double dvn = dv.norm();
+    if (dvn <= canon::EPS_SPEED_MPS) { return false; }
+    return dv.dot(y.state.velocity) > (canon::OVERTAKE_COS * dvn) * sy;
 }
 
-// Rule 4 predicate (SPEC §5.6): does x see y on its starboard side?
-// Body frame: forward = velocity, down = -zenith; starboard = down x forward
-// = velocity_hat x position_hat. (Facing east with zenith up, starboard is
-// south — the handedness is normative.) Dead-band EPS_LATERAL keeps the sign
-// robust against quantization noise; ambiguous geometry falls through.
+// Rule 4 predicate (SPEC §5.6): does x see y approaching on its starboard
+// side? Body frame: forward = velocity, down = -zenith; starboard =
+// down x forward = velocity_hat x position_hat (facing east with zenith up,
+// starboard is south — the handedness is normative). The APPROACH BEARING of
+// y as seen from x is -(vy - vx): y's relative position in the past is
+// miss - dv*dt, dominated by -dv. x "sees y to starboard" iff that bearing
+// has a starboard component above the EPS_BEARING dead-band — the exact
+// orbital transplant of COLREGS "has the other on her own starboard side".
+// Co-drifting pairs (no approach asymptote) fall back to the instantaneous
+// bearing with the EPS_LATERAL dead-band.
 inline bool sees_on_starboard(const CraftDescriptor& x,
                               const CraftDescriptor& y) {
     const Vec3 starboard =
         x.state.velocity.normalized().cross(x.state.position.normalized());
-    const Vec3 to_y = y.state.position - x.state.position;
-    return to_y.dot(starboard) > canon::EPS_LATERAL_M;
+    const Vec3 dv = y.state.velocity - x.state.velocity;
+    const double dvn = dv.norm();
+    if (dvn <= canon::EPS_SPEED_MPS) {
+        const Vec3 to_y = y.state.position - x.state.position;
+        return to_y.dot(starboard) > canon::EPS_LATERAL_M;
+    }
+    return -(dv.dot(starboard)) > canon::EPS_BEARING * dvn;
 }
 
 } // namespace detail

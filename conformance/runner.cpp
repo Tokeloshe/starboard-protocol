@@ -43,6 +43,13 @@ constexpr double V_LEO = 7600.0;
 constexpr double HORIZON_S = 3.0 * 5700.0;
 constexpr uint64_t EPOCH_MS = 1401000000000ull;
 
+// SB-C2 bit anchors for SB-013/SB-014 (pinned from the reference run).
+constexpr uint64_t SB013_TCA_BITS  = 0x40A5180000000000ull; // 2700.0 s exact
+constexpr uint64_t SB013_PC_BITS   = 0x3F5117B5BB93E612ull; // 1.043e-03
+constexpr uint64_t SB014_SIN1_BITS = 0x3FEAED548F090CEEull;
+constexpr uint64_t SB014_COS1_BITS = 0x3FE14A280FB5068Cull;
+constexpr uint64_t SB014_SINM_BITS = 0x3F4237685A41A8BDull;
+
 CraftDescriptor mk(const char* id, Tier tier, bool can_man, TrustLevel trust,
                    const Vec3& pos, const Vec3& vel, double var_m2) {
     CraftDescriptor d;
@@ -63,6 +70,15 @@ struct PairResult {
     bool agree;
 };
 
+// Advance a canonical state linearly by t (the kernel vectors are specified
+// in the linear relative-motion model, where this is the exact TCA state).
+CraftState linear_at(const CraftState& s, double t) {
+    CraftState r;
+    r.position = s.position + s.velocity * t;
+    r.velocity = s.velocity;
+    return r;
+}
+
 PairResult run_pair(const CraftDescriptor& a, const CraftDescriptor& b) {
     PairResult r;
     const double hbr = a.hard_body_radius_m + b.hard_body_radius_m;
@@ -70,8 +86,13 @@ PairResult run_pair(const CraftDescriptor& a, const CraftDescriptor& b) {
                     HORIZON_S);
     Conjunction c_ba = assess(b.state, a.state, b.covariance, a.covariance,
                               hbr, HORIZON_S);
-    r.v_ab = evaluate(a, b, r.c_ab, EPOCH_MS);
-    r.v_ba = evaluate(b, a, c_ba, EPOCH_MS);
+    // Rule geometry is evaluated at the encounter (SPEC §5.1).
+    CraftDescriptor a_tca = a;
+    a_tca.state = linear_at(a.state, r.c_ab.t_ca);
+    CraftDescriptor b_tca = b;
+    b_tca.state = linear_at(b.state, r.c_ab.t_ca);
+    r.v_ab = evaluate(a_tca, b_tca, r.c_ab, EPOCH_MS);
+    r.v_ba = evaluate(b_tca, a_tca, c_ba, EPOCH_MS);
     r.agree = id_equal(r.v_ab.give_way_id, r.v_ba.give_way_id) &&
               (r.v_ab.deciding_rule == r.v_ba.deciding_rule) &&
               (r.v_ab.conjunction_id == r.v_ba.conjunction_id) &&
@@ -192,15 +213,17 @@ void sb007() {
 
     const CraftDescriptor fleet[3] = {acme, orbx, hulk};
     const double hbr = 2.0 * canon::DEFAULT_HBR_M;
+    const Conjunction c_ah = assess(acme.state, hulk.state, acme.covariance,
+                                    hulk.covariance, hbr, HORIZON_S);
+    const Conjunction c_ao = assess(acme.state, orbx.state, acme.covariance,
+                                    orbx.covariance, hbr, HORIZON_S);
     WindowEntry win[2];
-    win[0] = {0u, 2u,
-              assess(acme.state, hulk.state, acme.covariance, hulk.covariance,
-                     hbr, HORIZON_S),
-              EPOCH_MS - 1800000ull};
-    win[1] = {0u, 1u,
-              assess(acme.state, orbx.state, acme.covariance, orbx.covariance,
-                     hbr, HORIZON_S),
-              EPOCH_MS};
+    win[0] = {0u, 2u, c_ah, EPOCH_MS - 1800000ull,
+              linear_at(acme.state, c_ah.t_ca),
+              linear_at(hulk.state, c_ah.t_ca)};
+    win[1] = {0u, 1u, c_ao, EPOCH_MS,
+              linear_at(acme.state, c_ao.t_ca),
+              linear_at(orbx.state, c_ao.t_ca)};
     WindowVerdict wv[2];
     const uint32_t n = resolve_window(fleet, 3u, win, 2u, wv);
     const bool ok = (n == 2u) &&
@@ -293,8 +316,10 @@ void sb011() {
     const Conjunction cb =
         assess(b.state, a.state, b.covariance, a.covariance, hbr, HORIZON_S);
     // Suppose BOTH craft (wrongly) conclude they must give way.
-    const GiveWayPlan pa = plan_give_way(a.state, ca, true);
-    const GiveWayPlan pb = plan_give_way(b.state, cb, false);
+    const GiveWayPlan pa =
+        plan_give_way(a.state, linear_at(a.state, ca.t_ca), ca, true);
+    const GiveWayPlan pb =
+        plan_give_way(b.state, linear_at(b.state, cb.t_ca), cb, false);
     const Vec3 ua = ca.miss_vector * (-1.0 / ca.miss_distance);
     const Vec3 ub = cb.miss_vector * (-1.0 / cb.miss_distance);
     const bool oppose = ua.dot(ub) < -0.999999;
@@ -341,6 +366,103 @@ void sb012() {
     report("SB-012", "4096-geometry swap-invariance sweep", ok);
 }
 
+// ---------------------------------------------------------------------------
+// SB-013  end-to-end canonical search: two crossing circular orbits (the
+//         demo's Act I geometry), conjunction FOUND by the orbital screener,
+//         verdict at the encounter. TCA/Pc are SB-C2 bit anchors.
+// ---------------------------------------------------------------------------
+CraftState circular(double r, double incl, double theta) {
+    const double v = std::sqrt(canon::MU_EARTH_M3S2 / r);
+    const double ct = std::cos(theta), st = std::sin(theta);
+    const double ci = std::cos(incl), si = std::sin(incl);
+    CraftState s;
+    s.position = Vec3(r * ct, r * st * ci, r * st * si);
+    s.velocity = Vec3(-v * st, v * ct * ci, v * ct * si);
+    return s;
+}
+
+void sb013() {
+    const double R = 6.93e6;
+    const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
+    const double horizon = 3.0 * (2.0 * canon::PI / n_ref);
+    CraftDescriptor a = mk("2026-001A", Tier::OPERATIONAL, true,
+                           TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
+    a.state = canonicalize(circular(R, 0.0, -n_ref * 2700.0));
+    const double r2 = R + 150.0;
+    const double n2 = std::sqrt(canon::MU_EARTH_M3S2 / (r2 * r2 * r2));
+    CraftDescriptor b = mk("2026-044B", Tier::OPERATIONAL, true,
+                           TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
+    b.state = canonicalize(circular(r2, 0.25 * canon::PI, -n2 * 2700.0));
+
+    OrbitConjunction fwd, rev;
+    const bool fa = screen_orbits(a.state, b.state, a.covariance,
+                                  b.covariance, 20.0, horizon, &fwd);
+    const bool fb = screen_orbits(b.state, a.state, b.covariance,
+                                  a.covariance, 20.0, horizon, &rev);
+    const bool sym = fa && fb &&
+                     (bits_of(fwd.conj.t_ca) == bits_of(rev.conj.t_ca)) &&
+                     (bits_of(fwd.conj.pc) == bits_of(rev.conj.pc));
+
+    CraftDescriptor a_tca = a;
+    a_tca.state = fwd.a_tca;
+    CraftDescriptor b_tca = b;
+    b_tca.state = fwd.b_tca;
+    const GiveWayVerdict v = evaluate(a_tca, b_tca, fwd.conj, EPOCH_MS);
+    const GiveWayVerdict w = evaluate(b_tca, a_tca, rev.conj, EPOCH_MS);
+
+    // Pinned SB-C2 anchors (fill from the reference run):
+    const bool anchors =
+        (bits_of(fwd.conj.t_ca) == SB013_TCA_BITS) &&
+        (bits_of(fwd.conj.pc) == SB013_PC_BITS);
+    const bool miss_ok = (fwd.conj.miss_distance > 148.0) &&
+                         (fwd.conj.miss_distance < 152.0) &&
+                         (fwd.conj.t_ca > 2699.0) && (fwd.conj.t_ca < 2701.0);
+    report("SB-013", "orbital search: crossing found + bits",
+           sym && miss_ok && actionable(fwd.conj) && anchors &&
+           (v.deciding_rule == DecidingRule::STARBOARD) &&
+           id_equal(v.give_way_id, make_object_id("2026-001A")) &&
+           id_equal(v.give_way_id, w.give_way_id) &&
+           (v.deciding_rule == w.deciding_rule));
+}
+
+// ---------------------------------------------------------------------------
+// SB-014  canonical trig + ephemeris: canon_sincos bit anchors, 1e-13
+//         accuracy sweep, and two-body closure (one period returns home).
+// ---------------------------------------------------------------------------
+void sb014() {
+    const bool anchors =
+        (bits_of(canon::canon_sin(1.0)) == SB014_SIN1_BITS) &&
+        (bits_of(canon::canon_cos(1.0)) == SB014_COS1_BITS) &&
+        (bits_of(canon::canon_sin(-18.849)) == SB014_SINM_BITS);
+    bool accurate = true;
+    for (int i = -640; i <= 640; ++i) {
+        const double x = 0.1 * static_cast<double>(i);
+        double s, c;
+        canon::canon_sincos(x, &s, &c);
+        if ((std::fabs(s - std::sin(x)) > 1.0e-13) ||
+            (std::fabs(c - std::cos(x)) > 1.0e-13)) { accurate = false; }
+    }
+    // Two-body closure: a full period of the CANONICAL state returns to the
+    // start (sub-mm), and energy is conserved along the way.
+    const CraftState s0 = canonicalize(circular(6.93e6, 0.3, 1.1));
+    const double a0 = 1.0 / (2.0 / s0.position.norm() -
+                             s0.velocity.dot(s0.velocity) /
+                                 canon::MU_EARTH_M3S2);
+    const double period =
+        2.0 * canon::PI * std::sqrt((a0 * a0 * a0) / canon::MU_EARTH_M3S2);
+    const CraftState s1 = kepler_propagate(s0, period);
+    const CraftState sh = kepler_propagate(s0, 0.5 * period);
+    const double closure = (s1.position - s0.position).norm();
+    const double e0 = 0.5 * s0.velocity.dot(s0.velocity) -
+                      canon::MU_EARTH_M3S2 / s0.position.norm();
+    const double eh = 0.5 * sh.velocity.dot(sh.velocity) -
+                      canon::MU_EARTH_M3S2 / sh.position.norm();
+    const bool closed = (closure < 1.0e-3) &&
+                        (std::fabs(eh - e0) / std::fabs(e0) < 1.0e-12);
+    report("SB-014", "canon trig + two-body closure", anchors && accurate &&
+           closed);
+}
+
 } // namespace
 
 int main() {
@@ -358,6 +480,8 @@ int main() {
     sb010();
     sb011();
     sb012();
+    sb013();
+    sb014();
     std::printf("\n%s (%d failure%s)\n",
                 (g_failures == 0) ? "SB-C1 + SB-C2 vectors: ALL PASS"
                                   : "CONFORMANCE FAILED",

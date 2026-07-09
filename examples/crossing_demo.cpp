@@ -6,12 +6,17 @@
 // ============================================================================
 // Starboard demo — the Rules of the Orbital Road, live.
 //
-// Act I : two rival-operator satellites, zero communication, independently
-//         compute identical Pc bits and the identical give-way verdict; the
-//         give-way craft flies a minimum-dv Hill-frame burn, clears the
-//         conjunction, and flocks back to its slot with a two-impulse return.
-// Act II: a third, uncooperative derelict joins the window; the multi-body
-//         resolver orders and settles all pairs in one deterministic pass.
+// Every state in this demo is PHYSICAL: real circular orbits, propagated
+// with the canonical two-body ephemeris. Nothing is placed by hand at the
+// encounter — the conjunctions are FOUND by the canonical search.
+//
+// Act I : two rival-operator satellites on crossing orbits (45 deg mutual
+//         inclination, 150 m radial offset at the common node). Zero
+//         communication: both find the same conjunction, compute identical
+//         Pc bits and the identical give-way verdict; the give-way craft
+//         flies a minimum-dv Hill-frame burn and flocks back to its slot.
+// Act II: a derelict on a third crossing orbit joins the window; the
+//         multi-body resolver settles all pairs in one deterministic pass.
 //
 //   Build:  cmake -B build && cmake --build build
 //   Run:    ./build/starboard_crossing_demo
@@ -19,6 +24,7 @@
 
 #include "starboard/starboard.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -46,8 +52,21 @@ uint64_t bits_of(double x) {
 
 void stamp(double t_rel_s, const char* msg) {
     const double a = (t_rel_s < 0.0) ? -t_rel_s : t_rel_s;
-    std::printf(" T%c%02d:%02d  %s\n", (t_rel_s < 0.0) ? '-' : '+',
+    std::printf(" T%c%03d:%02d  %s\n", (t_rel_s < 0.0) ? '-' : '+',
                 static_cast<int>(a) / 60, static_cast<int>(a) % 60, msg);
+}
+
+// A craft on a circular orbit of radius r, in the plane produced by rotating
+// the equatorial plane by `incl` about the +x axis, at phase angle theta
+// (theta = 0 is the ascending node on +x).
+CraftState circular_state(double r, double incl, double theta) {
+    const double v = std::sqrt(canon::MU_EARTH_M3S2 / r);
+    const double ct = std::cos(theta), st = std::sin(theta);
+    const double ci = std::cos(incl), si = std::sin(incl);
+    CraftState s;
+    s.position = Vec3(r * ct, r * st * ci, r * st * si);
+    s.velocity = Vec3(-v * st, v * ct * ci, v * ct * si);
+    return s;
 }
 
 } // namespace
@@ -58,65 +77,84 @@ int main() {
     std::printf("=============================================================\n\n");
 
     // ------------------------------------------------------------------
-    // Act I — two rivals on crossing tracks, TCA 45 minutes out.
+    // Physical setup. All three craft cross the +x (or -y) node of the
+    // reference orbit; phases are back-propagated so the encounters happen
+    // mid-demo. Epoch of all states: t = 0 (GPS ms below).
     // ------------------------------------------------------------------
-    const double R_LEO = 6.93e6;    // m
-    const double V_LEO = 7600.0;    // m/s
-    const double LEAD  = 2700.0;    // s to TCA at detection
-    const uint64_t TCA_EPOCH_MS = 1401000000000ull;  // shared GPS epoch
+    const double R = 6.93e6;                                   // ~552 km alt
+    const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
+    const double T_CROSS = 2700.0;                             // s, Act I TCA
+    const uint64_t T0_MS = 1401000000000ull;                   // shared epoch
+    const double HORIZON = 3.0 * (2.0 * canon::PI / n_ref);    // 3 revs
 
-    // Crossing point ~(0,0,R): ACME flies +x, ORBX flies +y and will pass
-    // 150 m above. States are the shared-catalog relative-motion convention.
+    // ACME-1: equatorial, reaches the +x node at T_CROSS.
     CraftDescriptor acme;
     acme.object_id = make_object_id("2026-001A");
     acme.tier = Tier::OPERATIONAL;
-    acme.state.position = Vec3(0.0, 0.0, R_LEO);
-    acme.state.velocity = Vec3(V_LEO, 0.0, 0.0);
-    acme.covariance = Sym33::diagonal(9.0e4);        // sigma = 300 m
-    acme.state = canonicalize(acme.state);
+    acme.state = circular_state(R, 0.0, -n_ref * T_CROSS);
+    acme.covariance = Sym33::diagonal(9.0e4);                  // sigma 300 m
 
+    // ORBX-9: 45 deg inclined, 150 m higher, reaches the same node at the
+    // same instant — a genuine crossing conjunction.
     CraftDescriptor orbx;
     orbx.object_id = make_object_id("2026-044B");
     orbx.tier = Tier::OPERATIONAL;
-    orbx.state.position = Vec3(V_LEO * LEAD, -V_LEO * LEAD, R_LEO + 150.0);
-    orbx.state.velocity = Vec3(0.0, V_LEO, 0.0);
+    const double r_orbx = R + 150.0;
+    const double n_orbx =
+        std::sqrt(canon::MU_EARTH_M3S2 / (r_orbx * r_orbx * r_orbx));
+    orbx.state = circular_state(r_orbx, 0.25 * canon::PI, -n_orbx * T_CROSS);
     orbx.covariance = Sym33::diagonal(9.0e4);
-    orbx.state = canonicalize(orbx.state);
-
-    const double horizon = 3.0 * 5700.0;   // ~3 orbital periods
 
     std::printf(" Act I - two rivals, zero communication\n");
-    std::printf("   ACME-1 [2026-001A]  ACME Space    tier OPERATIONAL\n");
-    std::printf("   ORBX-9 [2026-044B]  OrbX (rival)  tier OPERATIONAL\n\n");
+    std::printf("   ACME-1 [2026-001A]  ACME Space    equatorial, 552 km\n");
+    std::printf("   ORBX-9 [2026-044B]  OrbX (rival)  45 deg incl, +150 m\n\n");
 
-    // Each craft screens independently (Layer 0).
+    // --- Layer 0: each craft runs the canonical conjunction search ---
     const double hbr = acme.hard_body_radius_m + orbx.hard_body_radius_m;
-    Conjunction c_acme = assess(acme.state, orbx.state, acme.covariance,
-                                orbx.covariance, hbr, horizon);
-    Conjunction c_orbx = assess(orbx.state, acme.state, orbx.covariance,
-                                acme.covariance, hbr, horizon);
-
-    stamp(-LEAD, "both on-board screens run, independently:");
-    std::printf("   ACME-1   Pc = %.3e   miss %6.1f m   TCA in %.1f s\n",
-                c_acme.pc, c_acme.miss_distance, c_acme.t_ca);
-    std::printf("   ORBX-9   Pc = %.3e   miss %6.1f m   TCA in %.1f s\n",
-                c_orbx.pc, c_orbx.miss_distance, c_orbx.t_ca);
-    const bool pc_bits_equal = (bits_of(c_acme.pc) == bits_of(c_orbx.pc));
-    std::printf("   Pc bits  ACME 0x%016llX | ORBX 0x%016llX  %s\n\n",
-                static_cast<unsigned long long>(bits_of(c_acme.pc)),
-                static_cast<unsigned long long>(bits_of(c_orbx.pc)),
-                pc_bits_equal ? "IDENTICAL [ok]" : "MISMATCH [BUG]");
-
-    if (!actionable(c_acme)) {
-        std::printf("No actionable conjunction. Nothing to do.\n");
+    OrbitConjunction oc_a, oc_b;
+    const bool found_a = screen_orbits(acme.state, orbx.state,
+                                       acme.covariance, orbx.covariance,
+                                       hbr, HORIZON, &oc_a);
+    const bool found_b = screen_orbits(orbx.state, acme.state,
+                                       orbx.covariance, acme.covariance,
+                                       hbr, HORIZON, &oc_b);
+    if (!found_a || !found_b) {
+        std::printf("No conjunction found (unexpected).\n");
         return 1;
     }
 
-    // Each craft runs the Rules of the Orbital Road (Layer 1).
-    const GiveWayVerdict v_acme = evaluate(acme, orbx, c_acme, TCA_EPOCH_MS);
-    const GiveWayVerdict v_orbx = evaluate(orbx, acme, c_orbx, TCA_EPOCH_MS);
+    stamp(-oc_a.conj.t_ca, "both on-board searches sweep 3 revolutions:");
+    std::printf("   ACME-1   TCA in %.3f s   miss %6.1f m   Pc = %.3e\n",
+                oc_a.conj.t_ca, oc_a.conj.miss_distance, oc_a.conj.pc);
+    std::printf("   ORBX-9   TCA in %.3f s   miss %6.1f m   Pc = %.3e\n",
+                oc_b.conj.t_ca, oc_b.conj.miss_distance, oc_b.conj.pc);
+    const bool pc_bits_equal =
+        (bits_of(oc_a.conj.pc) == bits_of(oc_b.conj.pc)) &&
+        (bits_of(oc_a.conj.t_ca) == bits_of(oc_b.conj.t_ca));
+    std::printf("   Pc bits  ACME 0x%016llX | ORBX 0x%016llX  %s\n\n",
+                static_cast<unsigned long long>(bits_of(oc_a.conj.pc)),
+                static_cast<unsigned long long>(bits_of(oc_b.conj.pc)),
+                pc_bits_equal ? "IDENTICAL [ok]" : "MISMATCH [BUG]");
 
-    stamp(-LEAD, "each runs the Rules of the Orbital Road:");
+    if (!actionable(oc_a.conj)) {
+        std::printf("Not actionable. Nothing to do.\n");
+        return 1;
+    }
+
+    // --- Layer 1: rule geometry is evaluated at the encounter ---
+    const uint64_t tca_epoch_ms =
+        T0_MS + static_cast<uint64_t>(oc_a.conj.t_ca * 1000.0);
+    CraftDescriptor acme_tca = acme;
+    acme_tca.state = oc_a.a_tca;
+    CraftDescriptor orbx_tca = orbx;
+    orbx_tca.state = oc_a.b_tca;
+
+    const GiveWayVerdict v_acme =
+        evaluate(acme_tca, orbx_tca, oc_a.conj, tca_epoch_ms);
+    const GiveWayVerdict v_orbx =
+        evaluate(orbx_tca, acme_tca, oc_b.conj, tca_epoch_ms);
+
+    stamp(-oc_a.conj.t_ca, "each runs the Rules of the Orbital Road:");
     std::printf("   ACME-1   verdict: I %s   (%s)\n",
                 v_acme.self_role == Role::GIVE_WAY ? "GIVE WAY" : "STAND ON",
                 rule_str(v_acme.deciding_rule));
@@ -133,48 +171,48 @@ int main() {
                 v_acme.give_way_id.c, agree ? "[ok] no message needed"
                                             : "[BUG] disagreement");
 
-    // Optional Layer-2 handshake, confirming what both already know.
-    stamp(-LEAD + 10.0, "optional handshake over shared relay (Layer 2):");
+    stamp(-oc_a.conj.t_ca + 10.0, "optional handshake over shared relay:");
     std::printf("   ACME-1 -> ORBX-9   INTENT  \"conj 0x%08llX: I give way\"\n",
                 static_cast<unsigned long long>(v_acme.conjunction_id >> 32));
     std::printf("   ORBX-9 -> ACME-1   ACK     \"agreed, I stand on\"\n");
     std::printf("   (comms CONFIRM the verdict; they never decide it)\n\n");
 
-    // The give-way craft plans its minimum-dv burn (Layer 6).
+    // --- Layer 6: the give-way craft plans its minimum-dv burn ---
     const bool acme_gives = (v_acme.self_role == Role::GIVE_WAY);
-    const CraftDescriptor& gw   = acme_gives ? acme : orbx;
-    const Conjunction&     gc   = acme_gives ? c_acme : c_orbx;
+    const CraftDescriptor& gw = acme_gives ? acme : orbx;
+    const OrbitConjunction& goc = acme_gives ? oc_a : oc_b;
     const bool gw_is_lo =
         (id_compare(gw.object_id,
                     (acme_gives ? orbx : acme).object_id) <= 0);
 
-    const GiveWayPlan plan = plan_give_way(gw.state, gc, gw_is_lo);
+    const GiveWayPlan plan =
+        plan_give_way(gw.state, goc.a_tca, goc.conj, gw_is_lo);
     const double naive_dv =
-        (canon::MANEUVER_MARGIN * canon::R_SAFE_M - gc.miss_distance) / gc.t_ca;
+        (canon::MANEUVER_MARGIN * canon::R_SAFE_M - goc.conj.miss_distance) /
+        goc.conj.t_ca;
 
-    stamp(-LEAD + 20.0, "give-way craft plans minimum-dv burn (Hill/CW):");
+    stamp(-oc_a.conj.t_ca + 20.0, "give-way craft plans min-dv burn (Hill/CW):");
     std::printf("   dv = %.3f m/s   hill [radial %+.3f, along %+.3f, cross %+.3f]\n",
                 plan.dv_mag, plan.dv_hill.x, plan.dv_hill.y, plan.dv_hill.z);
     std::printf("   naive linear impulse would cost %.3f m/s -> CW saves %.0f%%\n\n",
                 naive_dv, 100.0 * (1.0 - plan.dv_mag / naive_dv));
 
-    stamp(-LEAD + 30.0, "burn executed. ORBX-9 holds course - predictability");
-    std::printf("          is the stand-on craft's entire job.\n\n");
+    stamp(-oc_a.conj.t_ca + 30.0,
+          "burn executed. ORBX-9 holds course - predictability");
+    std::printf("           is the stand-on craft's entire job.\n\n");
 
-    // Timeline to TCA: separation along the way (linear pair + CW deviation).
-    const double n_gw = mean_motion(gw.state);
-    const HillState kick{Vec3{}, plan.dv_hill};
-    for (double t = LEAD / 3.0; t < LEAD - 1.0; t += LEAD / 3.0) {
-        const Vec3 dr = (gc.miss_vector - gc.rel_velocity * (gc.t_ca - t)) -
-                        hill_basis(gw.state).tmul(
-                            cw_propagate(kick, n_gw, t).r);
+    // Timeline to TCA: true inter-craft range from the canonical ephemeris.
+    for (int k = 2; k >= 1; --k) {
+        const double t = oc_a.conj.t_ca - 900.0 * static_cast<double>(k);
+        const CraftState sa = kepler_propagate(canonicalize(acme.state), t);
+        const CraftState sb = kepler_propagate(canonicalize(orbx.state), t);
         char line[96];
-        std::snprintf(line, sizeof(line),
-                      "range %8.1f km, closing", dr.norm() / 1000.0);
-        stamp(-LEAD + t, line);
+        std::snprintf(line, sizeof(line), "range %8.1f km, closing",
+                      (sb.position - sa.position).norm() / 1000.0);
+        stamp(t - oc_a.conj.t_ca, line);
     }
 
-    const double miss_final = gc.miss_distance + plan.displacement_m;
+    const double miss_final = goc.conj.miss_distance + plan.displacement_m;
     char tca_line[96];
     std::snprintf(tca_line, sizeof(tca_line),
                   "TCA - closest approach %.1f m >= R_SAFE %.0f m  %s",
@@ -183,10 +221,12 @@ int main() {
     stamp(0.0, tca_line);
     std::printf("\n");
 
-    // Layer 3 — return to slot: mirror + phase (the flock settles back).
+    // --- Layer 3: return to slot, mirror + phase ---
+    const double n_gw = mean_motion(gw.state);
     const MirrorReturnPlan ret =
         plan_mirror_return(plan.dv_hill, n_gw, canon::RETURN_PHASING_ORBITS);
-    const double t_mirror = -LEAD + ret.wait_s;    // rel. TCA
+    const double t_mirror = -oc_a.conj.t_ca + ret.wait_s;
+    const HillState kick{Vec3{}, plan.dv_hill};
     const HillState off = cw_propagate(kick, n_gw, ret.wait_s);
 
     stamp(t_mirror, "one period after the burn: mirror + phase return");
@@ -197,7 +237,6 @@ int main() {
     std::printf("   phasing home over %d orbits (%.0f s)\n",
                 canon::RETURN_PHASING_ORBITS, ret.transfer_s);
 
-    // Verify the return analytically: propagate the corrected state.
     HillState after1{off.r, off.v + ret.mirror_dv_hill};
     HillState arrive = cw_propagate(after1, n_gw, ret.transfer_s);
     arrive.v = arrive.v + ret.final_dv_hill;
@@ -208,8 +247,7 @@ int main() {
     stamp(t_mirror + ret.transfer_s, back_line);
     std::printf("   fuel: give-way %.3f + return %.3f = %.3f m/s total\n",
                 plan.dv_mag, ret.total_dv, plan.dv_mag + ret.total_dv);
-    std::printf("   (the give-way burn is analytically reversible: the whole\n");
-    std::printf("    avoidance cost ~ dv*(2 + 2/N) - Theorem 3)\n\n");
+    std::printf("   (analytically reversible: campaign ~ dv*(2 + 2/N))\n\n");
 
     const bool returned = (arrive.r.norm() < 1.0) && (arrive.v.norm() < 0.01);
 
@@ -219,23 +257,54 @@ int main() {
     std::printf("-------------------------------------------------------------\n");
     std::printf(" Act II - a derelict joins the window (3-body, one pass)\n\n");
 
+    // HULK: dead upper stage, 30 deg inclined orbit 40 m above ACME-1,
+    // crossing ACME-1's -y node ~24 minutes before the ORBX-9 encounter.
+    const double t_hulk = T_CROSS - (0.5 * canon::PI) / n_ref;
     CraftDescriptor hulk;
     hulk.object_id = make_object_id("1999-025DEB");
     hulk.tier = Tier::DEORBITING;
     hulk.can_maneuver = false;
     hulk.trust = TrustLevel::ASSERTED;     // nobody can verify a corpse
-    hulk.state.position = Vec3(-V_LEO * 900.0, 60.0, R_LEO + 40.0);
-    hulk.state.velocity = Vec3(V_LEO * 1.01, 0.0, 0.0);
-    hulk.state = canonicalize(hulk.state);
+    const double r_hulk = R + 40.0;
+    const double n_hulk =
+        std::sqrt(canon::MU_EARTH_M3S2 / (r_hulk * r_hulk * r_hulk));
+    // Same node family as ACME's -y crossing: phase -pi/2 at t_hulk, plane
+    // rotated about the node line (y axis) -> parametrize about x with the
+    // node shifted by -pi/2.
+    {
+        const double v_h = std::sqrt(canon::MU_EARTH_M3S2 / r_hulk);
+        const double th0 = -0.5 * canon::PI - n_hulk * t_hulk;
+        const double ci = std::cos(30.0 * canon::PI / 180.0);
+        const double si = std::sin(30.0 * canon::PI / 180.0);
+        // Orbit in plane rotated 30 deg about the y axis; theta measured
+        // from +x: pos = r*(cos th * ci, sin th, -cos th * si).
+        hulk.state.position = Vec3(r_hulk * std::cos(th0) * ci,
+                                   r_hulk * std::sin(th0),
+                                   -r_hulk * std::cos(th0) * si);
+        hulk.state.velocity = Vec3(-v_h * std::sin(th0) * ci,
+                                   v_h * std::cos(th0),
+                                   v_h * std::sin(th0) * si);
+    }
+
+    OrbitConjunction oc_h;
+    const bool found_h = screen_orbits(acme.state, hulk.state,
+                                       acme.covariance, hulk.covariance,
+                                       2.0 * canon::DEFAULT_HBR_M, HORIZON,
+                                       &oc_h);
+    if (!found_h) {
+        std::printf("Derelict conjunction not found (unexpected).\n");
+        return 1;
+    }
+    std::printf("   HULK   [1999-025DEB]  derelict stage, capability claim\n");
+    std::printf("          UNVERIFIED; TCA in %.1f s, miss %.1f m from ACME-1\n\n",
+                oc_h.conj.t_ca, oc_h.conj.miss_distance);
 
     const CraftDescriptor fleet[3] = {acme, orbx, hulk};
-
     WindowEntry win[2];
-    win[0] = {0u, 2u,
-              assess(acme.state, hulk.state, acme.covariance, hulk.covariance,
-                     hbr, horizon),
-              TCA_EPOCH_MS - 1800000ull};   // derelict pass 30 min earlier
-    win[1] = {0u, 1u, c_acme, TCA_EPOCH_MS};
+    win[0] = {0u, 2u, oc_h.conj,
+              T0_MS + static_cast<uint64_t>(oc_h.conj.t_ca * 1000.0),
+              oc_h.a_tca, oc_h.b_tca};
+    win[1] = {0u, 1u, oc_a.conj, tca_epoch_ms, oc_a.a_tca, oc_a.b_tca};
 
     WindowVerdict wv[2];
     const uint32_t n_resolved = resolve_window(fleet, 3u, win, 2u, wv);
@@ -254,8 +323,8 @@ int main() {
     std::printf("   conservative default treats it as debris and ACME-1 avoids\n");
     std::printf("   it anyway: a lie can shift fuel costs, never safety.\n");
     std::printf("   ACME-1, already burning, absorbs the ORBX-9 pair (cascade):\n");
-    std::printf("   one combined maneuver, and every craft in the window\n");
-    std::printf("   computed this same assignment without exchanging a byte.\n\n");
+    std::printf("   one combined maneuver; every craft in the window computed\n");
+    std::printf("   this same assignment without exchanging a byte.\n\n");
 
     const bool act2_ok = (n_resolved == 2u) &&
                          (wv[0].give_way_index == 0u) &&
@@ -266,8 +335,8 @@ int main() {
     const bool ok = pc_bits_equal && agree && plan.required &&
                     (miss_final >= canon::R_SAFE_M) && returned && act2_ok;
     std::printf("=============================================================\n");
-    std::printf(" %s\n", ok ? "DEMO PASSED - independent agreement, safe miss,"
-                              " slot restored." : "DEMO FAILED");
+    std::printf(" %s\n", ok ? "DEMO PASSED - found, agreed, avoided, returned."
+                            : "DEMO FAILED");
     std::printf("=============================================================\n");
     return ok ? 0 : 1;
 }
