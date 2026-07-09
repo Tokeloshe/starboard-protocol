@@ -1,6 +1,6 @@
 # Starboard Specification — The Rules of the Orbital Road
 
-**Ruleset SB/1 · Specification v0.3 (draft) · `RULESET_ID = 0x53420001`**
+**Ruleset SB/1 · Specification v0.4 (draft) · `RULESET_ID = 0x53420001`**
 
 *Specification text © 2026 James H, licensed CC BY 4.0. The reference
 implementation in `core/` is dual-licensed AGPL-3.0 / commercial.*
@@ -83,14 +83,33 @@ total order over all craft. Every pairwise computation in this spec is
 performed on the pair ordered by this comparison (§5.2). Ids MUST be unique;
 `lo`/`hi` below always refer to this ordering.
 
-### 3.3 Shared inputs
+### 3.3 Shared inputs — the conjunction data message
 
-Layer 1 consumes only **shared inputs**: the two canonical states, the two
-registry descriptors (tier, capability, hard-body radius, covariance), and
-the shared TCA epoch. A craft MUST NOT feed private knowledge (its own better
-ephemeris, unpublished maneuver plans) into the verdict — better data that
-the other craft does not have is how two honest implementations disagree.
-Private data MAY inform *whether* to escalate to operators; never the verdict.
+The determinism theorem rests on both craft computing from *identical*
+inputs. That is a real requirement, not an assumption: if ACME screens
+itself from its own GPS ephemeris and the counterpart from a public catalog,
+while ORBX does the mirror, their inputs are **not** symmetric and agreement
+is not guaranteed. Starboard therefore pins the *provenance*:
+
+> The canonical shared input is a **conjunction data message (CDM)**: both
+> craft's states and position covariances at a **common reference epoch**
+> `t_ref`, together with hard-body radii, drawn from a **shared source**
+> (a tracking/screening provider, a mutually-subscribed catalog, or a
+> bilateral state exchange) that furnishes the *same bytes* to both craft.
+
+Both craft MUST evaluate the verdict from the CDM, snapped to the lattice
+(§3.4). A craft MUST NOT substitute private knowledge (its own better
+ephemeris of itself, unpublished maneuver plans) into the verdict — better
+data the other craft lacks is exactly how two honest implementations
+disagree. Private data MAY inform *whether* to escalate to operators, and
+MAY trigger requesting a fresh CDM; it never enters the shared computation.
+This matches operational conjunction assessment, where a provider issues a
+CDM per close approach and both operators work from it.
+
+Layer 1 additionally consumes the two registry descriptors (tier,
+capability, trust) and the TCA epoch derived from the CDM. The reference
+epoch also bounds the propagation arc (§4.2), which is what keeps the shared
+extrapolation physically valid.
 
 ### 3.4 The quantization lattice
 
@@ -133,6 +152,8 @@ All conformant implementations MUST use exactly these values
 | Symbol | Meaning | Value |
 |---|---|---|
 | `MU_EARTH_M3S2` | gravitational parameter | 3.986004418 × 10¹⁴ |
+| `J2_EARTH` | Earth oblateness coefficient | 1.08262668 × 10⁻³ |
+| `R_EARTH_M` | equatorial radius (WGS-84) | 6378137 |
 | `R_SCREEN_M` | coarse screening gate | 8192 m (2¹³) |
 | `R_SAFE_M` | required post-maneuver miss | 1024 m (2¹⁰) |
 | `PC_ACTIONABLE` | Pc declaring a conjunction | 1.0 × 10⁻⁴ |
@@ -144,9 +165,10 @@ All conformant implementations MUST use exactly these values
 | `EPS_SPEED_MPS` | speed-ordering dead-band | 0.0625 m/s (2⁻⁴) |
 | `EPS_BEARING` | approach-bearing dead-band (sine) | 0.0625 (2⁻⁴, ≈3.6°) |
 | `EPS_LATERAL_M` | co-drift bearing dead-band | 1 m |
-| `SCREEN_STEP_S` | canonical search grid | 32 s (2⁵) |
+| `PROP_STEP_S` | fixed RK4 integrator step | 4 s (2²) |
+| `SCREEN_ARC_MAX_S` | bounded screening arc | 1024 s (2¹⁰) |
+| `SCREEN_STEP_S` | range-rate search grid | 32 s (2⁵) |
 | `TCA_BISECT_ITERS` | TCA refinement depth | 48 (fixed) |
-| `KEPLER_BISECT_ITERS` / `_POLISH` | Kepler solver iterations | 48 / 3 (fixed) |
 | `MANEUVER_MARGIN` | κ, burn target κ·R_SAFE | 1.25 |
 | `RETURN_PHASING_ORBITS` | N in mirror+phase return | 2 |
 | `TCA_BUCKET_MS` | conjunction-id time bucket | 16384 ms (2¹⁴) |
@@ -166,45 +188,70 @@ covariances, and combined hard-body radius `R = hbr_A + hbr_B`. How a craft
 *obtains* candidate neighbours (catalog, CDM feed, ISL ranging) is
 implementation-defined; what it computes from the shared state is not.
 
-### 4.2 The canonical ephemeris
+### 4.2 The canonical propagator
 
-Conjunctions are *found* by propagating both craft along the **canonical
-ephemeris**: two-body Keplerian motion (`MU_EARTH`), evaluated with the
-Lagrange f&g functions in the eccentric-anomaly **difference form**
+Conjunctions are *found* by propagating both craft from the CDM reference
+epoch along the **canonical propagator**: a fixed-step RK4 integration of
+**two-body + J2 zonal** dynamics (`MU_EARTH`, `J2_EARTH`, `R_EARTH`;
+`propagator.hpp`). The acceleration is purely algebraic (`+ − × ÷ sqrt`
+only), so — unlike an analytic Keplerian solve, which needs sin/cos/atan2 —
+**no transcendental is reachable on the propagation path**, and `canon_exp`
+(in Pc) is the only pinned transcendental on the entire verdict path.
 
-```
-F(ΔE) = ΔE + e·sinE₀·(1 − cos ΔE) − e·cosE₀·sin ΔE − n·Δt = 0
-```
+Determinism rests on three pinned choices (SPEC §3.5): (i) fixed step
+`PROP_STEP_S`, with `floor(|Δt| / PROP_STEP_S)` whole steps of the signed
+step then one partial step — so whole steps are identical regardless of the
+target time and a flight implementation MAY march incrementally and still
+bit-match a from-epoch re-integration; (ii) pinned RK4 stage order; (iii)
+pinned intra-vector expansion order.
 
-which needs only `e·sinE₀ = r₀·v₀/√(μa)` and `e·cosE₀ = 1 − r₀/a` — no
-`atan2` anywhere. The solver is **fixed-iteration**: 48 bisections on the
-bracket `[m−3, m+3]` (F is strictly increasing, `F′ = r/a > 0`, so
-bisection provably converges for every eccentricity `e < 1`), then 3 Newton
-polish steps. No convergence test, no early exit: identical inputs take the
-identical arithmetic path on every machine. All trigonometry is
-`canon_sincos` (§4.6). Non-elliptic states are outside SB/1 and propagate
-linearly (conservative over a screening window).
+**Why J2, and why bounded (the error budget).** Pure two-body diverges from
+real LEO motion catastrophically: at 552 km the *relative* miss error
+between two craft both propagated two-body versus both propagated with J2
+is ≈ 240 m at 5 min and tens of km within one orbit (J2 nodal regression
+dominates, ∝ cos i). Determinism alone would then be agreement on a
+*fiction*. Two design choices make the shared computation both deterministic
+**and** physically valid:
 
-*Fidelity vs. agreement (informative).* Two-body is the canonical
-**agreement basis**, not a precision ephemeris: catalog refresh cadence
-bounds its error inside the covariance, and perturbations act nearly
-identically on co-located craft near TCA. Higher-fidelity private
-ephemerides MAY drive operator alerting but MUST NOT feed the shared
-verdict (§3.3) — better data the other craft does not have is how two
-honest implementations disagree.
+1. **J2 in the propagator.** With J2 modelled, the residual versus a
+   high-fidelity truth is dominated by unmodelled drag, which over the
+   bounded arc is ≤ ~1 m even at worst-case density and ballistic
+   coefficient. Higher zonals (J3 ≈ 2.5×10⁻³·J2) and the RK4 truncation at
+   `PROP_STEP_S = 4 s` (< 0.1 mm over the arc) are smaller still.
+2. **A bounded arc.** Screening runs only over `[t_ref, t_ref +
+   SCREEN_ARC_MAX_S]`, `SCREEN_ARC_MAX_S = 1024 s`. Over this arc the total
+   dynamics-model error is order **1 m** — a small fraction of `R_SAFE`
+   (1024 m) and well inside any operational covariance. Longer lead times
+   are handled operationally by **re-screening against a fresh CDM** as TCA
+   approaches (rolling CDMs), never by extrapolating an unphysically long
+   arc.
+
+Drag is deliberately **excluded** from the canonical model: it depends on
+un-pinnable atmosphere and vehicle parameters, so folding its bounded effect
+into the covariance keeps the shared computation deterministic. Operators
+SHOULD inflate the covariance by the documented dynamics-model bound for the
+arc they screen. (Measured error budget: `conformance/validation`; the study
+that set both constants is reproducible there.)
+
+Non-elliptic states (energy ≥ 0) are outside SB/1 and are reported unbounded
+by the prefilter (never screened out), then propagate under the same
+integrator.
 
 ### 4.2a The canonical conjunction search
 
-Normative algorithm (`screening.hpp`), per pair over `[0, horizon]`:
+Normative algorithm (`screening.hpp`), per pair over `[0, arc]`,
+`arc ≤ SCREEN_ARC_MAX_S`:
 
-1. **Ring prefilter.** If the two periapsis/apoapsis bands are separated by
-   more than `R_SCREEN`, the pair cannot conjunct: done. (Two square roots;
-   rejects the overwhelming majority of catalog pairs.)
-2. **Grid walk.** Sample `g(t) = dr·dv` (the range-rate sign function) on
-   the canonical grid `SCREEN_STEP_S = 32 s`. A range minimum lies in every
-   step where g goes negative → non-negative. The step is far below the
-   shortest relative-dynamics timescale, so each step holds at most one
-   extremum.
+1. **Ring prefilter.** If the two periapsis/apoapsis bands (from vis-viva —
+   algebraic, no atan2) are separated by more than `R_SCREEN`, the pair
+   cannot conjunct: done. Rejects the overwhelming majority of catalog pairs
+   with a few square roots and no propagation.
+2. **Grid walk.** Propagate both craft with the canonical propagator and
+   sample `g(t) = dr·dv` (the range-rate sign function) on the canonical
+   grid `SCREEN_STEP_S = 32 s`. A range minimum lies in every step where g
+   goes negative → non-negative. The step is far below the relative-dynamics
+   timescale, so each step holds at most one extremum (verified: a
+   54-geometry sweep finds zero missed conjunctions).
 3. **Refine.** 48 fixed bisections on the sign of g inside the bracket;
    quantize the refined TCA to the lattice.
 4. **Kernel.** Evaluate the encounter at the refined TCA: canonical states
@@ -213,10 +260,10 @@ Normative algorithm (`screening.hpp`), per pair over `[0, horizon]`:
    past closest approach but still inside `R_SCREEN` is a conjunction now.
 
 Every quantity in the walk is a shared, bit-deterministic function of the
-canonical states, so both craft find the same conjunctions with the same
-TCAs to the bit (conformance SB-013 pins this end-to-end). The screener
-returns the canonical **states at TCA** — Layer 1 evaluates the encounter,
-not the present (§5.1).
+CDM, so both craft find the same conjunctions with the same TCAs to the bit
+(conformance SB-013 pins this end-to-end). The screener returns the
+canonical **states at TCA** — Layer 1 evaluates the encounter, not the
+epoch (§5.1).
 
 *The linear kernel* (`geometry.hpp`) remains normative for the encounter
 itself: given a relative state, `t_raw = −(dr·dv)/(dv·dv)` (0 when
@@ -303,24 +350,25 @@ geometry, so `Pc(A,B)` and `Pc(B,A)` are the same bits.
 
 ### 4.6 The pinned transcendentals: `canon_exp`, `canon_sincos`
 
-The verdict path needs exactly two transcendental families, and both are
-defined operation-by-operation in `canon.hpp`:
+Both are defined operation-by-operation in `canon.hpp`:
 
 * **`canon_exp`** — Cody-Waite range reduction with the fdlibm ln 2 split,
   a 13-term Taylor polynomial in pinned Horner order, an exact `ldexp`
-  scale. Used by Starboard-Pc.
+  scale. Used by Starboard-Pc. This is the **only** transcendental on the
+  verdict path: the canonical propagator (§4.2) and the rule predicates
+  (§5) are trig-free by construction.
 * **`canon_sincos`** — three-part Cody-Waite π/2 reduction (each split
   constant has its low 27 mantissa bits zeroed, so the products `k·PIO2_HI`
   and `k·PIO2_MED` are *exact* for |k| < 2²⁶), Taylor kernels on
   |r| ≤ π/4 in pinned Horner order, quadrant selection. Domain |x| ≤ 2²⁰.
-  Used only by the canonical ephemeris (§4.2) — the Layer-1 rule
-  predicates remain trig-free by construction.
+  Used by the Clohessy-Wiltshire **maneuver** dynamics (§6, `frames.hpp`),
+  which are off the bit-exact verdict path but pinned anyway so maneuvers
+  are reproducible.
 
-Library `exp`/`sin`/`cos` MUST NOT be substituted on the verdict path — no
-libm guarantees correct rounding for them, and one ulp of drift near a
-threshold is a cross-vendor disagreement. The conformance suite pins bit
-anchors for both (SB-010, SB-014), and the `--bits` transcript folds dense
-sweeps of each (§10).
+Library `exp`/`sin`/`cos` MUST NOT be substituted — no libm guarantees
+correct rounding, and one ulp of drift near a threshold is a cross-vendor
+disagreement. The conformance suite pins bit anchors for both (SB-010,
+SB-014), and the `--bits` transcript folds dense sweeps of each (§10).
 
 ### 4.7 Actionability
 
@@ -736,14 +784,26 @@ mirror+phase return (Theorem 3); added multi-body cascade (Theorem 4),
 trust model (§8), strict arithmetic profile (§3.5), quantization lattice
 (§3.4), and the conformance suite as a first-class deliverable.
 
-**v0.2 → v0.3:** added the canonical ephemeris and conjunction search
-(§4.2–§4.2a: fixed-iteration Kepler, provably convergent bisection, ring
-prefilter) and `canon_sincos` (§4.6); rule geometry moved to the encounter
-epoch with asymptote predicates (§5.1, §5.5–§5.6) — overtaking via
-relative-velocity alignment, starboard via approach bearing; maneuver
-planning fixed to express the push direction in the Hill frame at TCA;
-registry specified and implemented (REGISTRY.md: Ed25519 verify-only
-chain, Merkle log, current-state revocation); SB-C2 gained the `--bits`
-transcript and the cross-toolchain matrix (20/20 builds bit-identical).
-Draft revisions before first publication share `RULESET_ID`; the id-bump
-discipline (§11, §9.3) starts at publication.
+**v0.2 → v0.3:** added a canonical conjunction search and `canon_sincos`;
+rule geometry moved to the encounter epoch with asymptote predicates (§5.1,
+§5.5–§5.6) — overtaking via relative-velocity alignment, starboard via
+approach bearing; maneuver planning fixed to express the push direction in
+the Hill frame at TCA; registry specified and implemented (REGISTRY.md:
+Ed25519 verify-only chain, Merkle log, current-state revocation with a
+freshness bound); SB-C2 gained the `--bits` transcript and the
+cross-toolchain matrix (20/20 builds bit-identical).
+
+**v0.3 → v0.4:** the two big fidelity/provenance fixes. (1) The shared input
+is now an explicit **conjunction data message** at a common reference epoch
+from a shared source (§3.3), so the symmetric-input premise of Theorem 1 is
+*established*, not assumed. (2) The two-body ephemeris (deterministic but
+physically wrong beyond a few minutes — the relative miss error reaches tens
+of km within an orbit) is replaced by a **two-body + J2 fixed-step
+propagator** over a **bounded 1024 s arc** (§4.2), where the total
+dynamics-model error is ~1 m — inside the covariance, so "determinism
+survives uncertainty" is now true of physics, not of an extrapolated
+fiction. The analytic Kepler solver and its `canon_sincos` dependency on the
+verdict path are retired (`canon_exp` is now the sole verdict-path
+transcendental; `canon_sincos` remains for CW maneuvers). Draft revisions
+before first publication share `RULESET_ID`; the id-bump discipline (§11,
+§9.3) starts at publication.

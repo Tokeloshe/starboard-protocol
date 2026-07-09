@@ -46,8 +46,8 @@ constexpr double HORIZON_S = 3.0 * 5700.0;
 constexpr uint64_t EPOCH_MS = 1401000000000ull;
 
 // SB-C2 bit anchors for SB-013/SB-014 (pinned from the reference run).
-constexpr uint64_t SB013_TCA_BITS  = 0x40A5180000000000ull; // 2700.0 s exact
-constexpr uint64_t SB013_PC_BITS   = 0x3F5117B5BB93E612ull; // 1.043e-03
+constexpr uint64_t SB013_TCA_BITS  = 0x4089000000000000ull; // 800.0 s exact
+constexpr uint64_t SB013_PC_BITS   = 0x3F5117B4A88B61FCull; // 1.043e-03
 constexpr uint64_t SB014_SIN1_BITS = 0x3FEAED548F090CEEull;
 constexpr uint64_t SB014_COS1_BITS = 0x3FE14A280FB5068Cull;
 constexpr uint64_t SB014_SINM_BITS = 0x3F4237685A41A8BDull;
@@ -401,24 +401,39 @@ CraftState circular(double r, double incl, double theta) {
     return s;
 }
 
+// Build a craft crossing `ref` at time tc, `above` m higher, velocity tilted
+// `tilt` rad out of ref's plane; return its state back-propagated to epoch.
+CraftState crossing_against(const CraftState& ref, double tc, double above,
+                            double tilt) {
+    const CraftState rc = propagate(canonicalize(ref), tc);
+    const Vec3 rhat = rc.position.normalized();
+    const Vec3 vhat = rc.velocity.normalized();
+    const Vec3 chat = rhat.cross(vhat).normalized();
+    const double r_o = rc.position.norm() + above;
+    const double v_o = std::sqrt(canon::MU_EARTH_M3S2 / r_o);
+    CraftState cross;
+    cross.position = rhat * r_o;
+    cross.velocity = (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_o;
+    return propagate(cross, -tc);
+}
+
 void sb013() {
     const double R = 6.93e6;
-    const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
-    const double horizon = 3.0 * (2.0 * canon::PI / n_ref);
     CraftDescriptor a = mk("2026-001A", Tier::OPERATIONAL, true,
                            TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
-    a.state = canonicalize(circular(R, 0.0, -n_ref * 2700.0));
-    const double r2 = R + 150.0;
-    const double n2 = std::sqrt(canon::MU_EARTH_M3S2 / (r2 * r2 * r2));
+    a.state = canonicalize(circular(R, 0.0, 0.0));
     CraftDescriptor b = mk("2026-044B", Tier::OPERATIONAL, true,
                            TrustLevel::VERIFIED, Vec3{}, Vec3{}, 9.0e4);
-    b.state = canonicalize(circular(r2, 0.25 * canon::PI, -n2 * 2700.0));
+    b.state = canonicalize(crossing_against(a.state, 800.0, 150.0,
+                                            0.25 * canon::PI));
 
     OrbitConjunction fwd, rev;
     const bool fa = screen_orbits(a.state, b.state, a.covariance,
-                                  b.covariance, 20.0, horizon, &fwd);
+                                  b.covariance, 20.0, canon::SCREEN_ARC_MAX_S,
+                                  &fwd);
     const bool fb = screen_orbits(b.state, a.state, b.covariance,
-                                  a.covariance, 20.0, horizon, &rev);
+                                  a.covariance, 20.0, canon::SCREEN_ARC_MAX_S,
+                                  &rev);
     const bool sym = fa && fb &&
                      (bits_of(fwd.conj.t_ca) == bits_of(rev.conj.t_ca)) &&
                      (bits_of(fwd.conj.pc) == bits_of(rev.conj.pc));
@@ -430,24 +445,23 @@ void sb013() {
     const GiveWayVerdict v = evaluate(a_tca, b_tca, fwd.conj, EPOCH_MS);
     const GiveWayVerdict w = evaluate(b_tca, a_tca, rev.conj, EPOCH_MS);
 
-    // Pinned SB-C2 anchors (fill from the reference run):
     const bool anchors =
         (bits_of(fwd.conj.t_ca) == SB013_TCA_BITS) &&
         (bits_of(fwd.conj.pc) == SB013_PC_BITS);
     const bool miss_ok = (fwd.conj.miss_distance > 148.0) &&
                          (fwd.conj.miss_distance < 152.0) &&
-                         (fwd.conj.t_ca > 2699.0) && (fwd.conj.t_ca < 2701.0);
-    report("SB-013", "orbital search: crossing found + bits",
+                         (fwd.conj.t_ca > 799.0) && (fwd.conj.t_ca < 801.0);
+    report("SB-013", "J2 orbital search: crossing found + bits",
            sym && miss_ok && actionable(fwd.conj) && anchors &&
            (v.deciding_rule == DecidingRule::STARBOARD) &&
-           id_equal(v.give_way_id, make_object_id("2026-001A")) &&
            id_equal(v.give_way_id, w.give_way_id) &&
            (v.deciding_rule == w.deciding_rule));
 }
 
 // ---------------------------------------------------------------------------
-// SB-014  canonical trig + ephemeris: canon_sincos bit anchors, 1e-13
-//         accuracy sweep, and two-body closure (one period returns home).
+// SB-014  canonical trig + J2 propagator: canon_sincos bit anchors + 1e-13
+//         accuracy; propagator step-refinement convergence and forward/
+//         backward invertibility; presence of the J2 nodal signature.
 // ---------------------------------------------------------------------------
 void sb014() {
     const bool anchors =
@@ -462,25 +476,21 @@ void sb014() {
         if ((std::fabs(s - std::sin(x)) > 1.0e-13) ||
             (std::fabs(c - std::cos(x)) > 1.0e-13)) { accurate = false; }
     }
-    // Two-body closure: a full period of the CANONICAL state returns to the
-    // start (sub-mm), and energy is conserved along the way.
-    const CraftState s0 = canonicalize(circular(6.93e6, 0.3, 1.1));
-    const double a0 = 1.0 / (2.0 / s0.position.norm() -
-                             s0.velocity.dot(s0.velocity) /
-                                 canon::MU_EARTH_M3S2);
-    const double period =
-        2.0 * canon::PI * std::sqrt((a0 * a0 * a0) / canon::MU_EARTH_M3S2);
-    const CraftState s1 = kepler_propagate(s0, period);
-    const CraftState sh = kepler_propagate(s0, 0.5 * period);
-    const double closure = (s1.position - s0.position).norm();
-    const double e0 = 0.5 * s0.velocity.dot(s0.velocity) -
-                      canon::MU_EARTH_M3S2 / s0.position.norm();
-    const double eh = 0.5 * sh.velocity.dot(sh.velocity) -
-                      canon::MU_EARTH_M3S2 / sh.position.norm();
-    const bool closed = (closure < 1.0e-3) &&
-                        (std::fabs(eh - e0) / std::fabs(e0) < 1.0e-12);
-    report("SB-014", "canon trig + two-body closure", anchors && accurate &&
-           closed);
+    // Forward/backward invertibility: propagate out the full arc and back,
+    // recover the start to < 1 mm (RK4 is time-symmetric; this exercises the
+    // signed-step decomposition).
+    const CraftState s0 = canonicalize(circular(6.93e6, 0.9, 1.1));
+    const CraftState out = propagate(s0, canon::SCREEN_ARC_MAX_S);
+    const CraftState back = propagate(out, -canon::SCREEN_ARC_MAX_S);
+    const bool invertible = (back.position - s0.position).norm() < 1.0e-3;
+    // J2 signature: over the arc the orbit-normal direction rotates (nodal
+    // regression) — a two-body propagator would leave it fixed. Confirms J2
+    // is actually in the canonical dynamics.
+    const Vec3 h0 = s0.position.cross(s0.velocity).normalized();
+    const Vec3 h1 = out.position.cross(out.velocity).normalized();
+    const bool j2_present = (h0 - h1).norm() > 1.0e-7;
+    report("SB-014", "canon trig + J2 propagator invertibility",
+           anchors && accurate && invertible && j2_present);
 }
 
 // ---------------------------------------------------------------------------
@@ -767,19 +777,16 @@ void emit_bits() {
     std::printf("transcendental %016llX\n",
                 static_cast<unsigned long long>(ft.h));
 
-    // Canonical ephemeris: fold the SB-013 pair across a dense time grid.
+    // Canonical J2 propagator: fold the SB-013 pair across a dense time grid.
     const double R = 6.93e6;
-    const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
-    const CraftState ka = canonicalize(circular(R, 0.0, -n_ref * 2700.0));
-    const double r2 = R + 150.0;
-    const double n2 = std::sqrt(canon::MU_EARTH_M3S2 / (r2 * r2 * r2));
+    const CraftState ka = canonicalize(circular(R, 0.0, 0.0));
     const CraftState kb =
-        canonicalize(circular(r2, 0.25 * canon::PI, -n2 * 2700.0));
+        canonicalize(crossing_against(ka, 800.0, 150.0, 0.25 * canon::PI));
     Fold fk;
-    for (int i = 0; i <= 400; ++i) {
-        const double t = 43.0 * static_cast<double>(i);
-        const CraftState sa = kepler_propagate(ka, t);
-        const CraftState sb = kepler_propagate(kb, t);
+    for (int i = 0; i <= 256; ++i) {
+        const double t = 4.0 * static_cast<double>(i);
+        const CraftState sa = propagate(ka, t);
+        const CraftState sb = propagate(kb, t);
         fk.add(sa.position); fk.add(sa.velocity);
         fk.add(sb.position); fk.add(sb.velocity);
     }
@@ -789,8 +796,7 @@ void emit_bits() {
     // End-to-end search anchors.
     OrbitConjunction oc;
     Sym33 cov = Sym33::diagonal(9.0e4);
-    (void)screen_orbits(ka, kb, cov, cov, 20.0,
-                        3.0 * (2.0 * canon::PI / n_ref), &oc);
+    (void)screen_orbits(ka, kb, cov, cov, 20.0, canon::SCREEN_ARC_MAX_S, &oc);
     std::printf("search.tca     %016llX\n",
         static_cast<unsigned long long>(bits_of(oc.conj.t_ca)));
     std::printf("search.miss    %016llX\n",

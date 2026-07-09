@@ -87,28 +87,28 @@ inline double mean_motion(const CraftState& s) {
 //   [r(t); v(t)] = [ phi_rr  phi_rv ; phi_vr  phi_vv ] [r0; v0]
 
 inline Mat3 cw_phi_rr(double n, double t) {
-    const double s = std::sin(n * t), c = std::cos(n * t);
+    double s, c; canon::canon_sincos(n * t, &s, &c);
     return {{{4.0 - 3.0 * c,        0.0, 0.0},
              {6.0 * (s - n * t),    1.0, 0.0},
              {0.0,                  0.0, c}}};
 }
 
 inline Mat3 cw_phi_rv(double n, double t) {
-    const double s = std::sin(n * t), c = std::cos(n * t);
+    double s, c; canon::canon_sincos(n * t, &s, &c);
     return {{{s / n,                 2.0 * (1.0 - c) / n,        0.0},
              {-2.0 * (1.0 - c) / n,  (4.0 * s - 3.0 * n * t) / n, 0.0},
              {0.0,                   0.0,                         s / n}}};
 }
 
 inline Mat3 cw_phi_vr(double n, double t) {
-    const double s = std::sin(n * t), c = std::cos(n * t);
+    double s, c; canon::canon_sincos(n * t, &s, &c);
     return {{{3.0 * n * s,          0.0, 0.0},
              {-6.0 * n * (1.0 - c), 0.0, 0.0},
              {0.0,                  0.0, -n * s}}};
 }
 
 inline Mat3 cw_phi_vv(double n, double t) {
-    const double s = std::sin(n * t), c = std::cos(n * t);
+    double s, c; canon::canon_sincos(n * t, &s, &c);
     return {{{c,        2.0 * s,       0.0},
              {-2.0 * s, 4.0 * c - 3.0, 0.0},
              {0.0,      0.0,           c}}};

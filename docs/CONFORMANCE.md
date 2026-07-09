@@ -68,7 +68,7 @@ within 1 m. This is the level a certification engagement actually runs.
 | SB-011 | Theorem 2 | double give-way displacements oppose |
 | SB-012 | 4096-geometry LCG sweep | swap-invariance + totality, empirically |
 | SB-013 | end-to-end orbital search (crossing orbits) | conjunction FOUND; TCA/Pc **bit anchors**; Rule 4 at the encounter |
-| SB-014 | canonical trig + ephemeris | `canon_sincos` bit anchors; 10⁻¹³ sweep; two-body closure |
+| SB-014 | canonical trig + J2 propagator | `canon_sincos` bit anchors; 10⁻¹³ sweep; propagator invertibility + J2 signature |
 | SB-015 | SHA-512 | FIPS 180-2 example vectors |
 | SB-016 | Ed25519 verify | RFC 8032 §7.1 vectors + tamper/zero-key/non-canonical-S rejects |
 | SB-017 | registry pipeline | libsodium-signed fixtures: VERIFIED, and every downgrade path |

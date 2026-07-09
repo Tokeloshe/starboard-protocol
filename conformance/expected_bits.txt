@@ -3,10 +3,10 @@ exp(-0.5)      3FE368B2FC6F960A
 sin(1.0)       3FEAED548F090CEE
 cos(1.0)       3FE14A280FB5068C
 transcendental 968AE374ED4E17A0
-ephemeris      6608361B06464BDF
-search.tca     40A5180000000000
-search.miss    4062BFF0006EEF4E
-search.pc      3F5117B5BB93E612
+ephemeris      7B72822C4719141C
+search.tca     4089000000000000
+search.miss    4062BFF989262397
+search.pc      3F5117B4A88B61FC
 pc-kernel      9DDBFA3DAF468629
 verdict-sweep  7DD27B1D45C033A6
 registry       0A10C856E3BBAE18

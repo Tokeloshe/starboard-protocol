@@ -28,9 +28,10 @@ unforkable**:
   decides or falls through, ending in a fair coin that is deterministic yet
   50/50 over repeated encounters (nobody is systematically the fuel-payer).
 - **Determinism survives uncertainty.** Conjunctions are *found* by a
-  canonical ephemeris (fixed-iteration Kepler — provably convergent, no
-  data-dependent branching) and assessed as covariance-aware probability
-  of collision (encounter-plane Pc via Chan's series at fixed order),
+  canonical propagator (fixed-step two-body + J2, deterministic and
+  physically valid to ~1 m over a bounded arc) from a shared conjunction
+  data message, and assessed as covariance-aware probability of collision
+  (encounter-plane Pc via Chan's series at fixed order),
   with a power-of-two quantization lattice, a strict IEEE-754 arithmetic
   profile, and spec-pinned transcendentals — so two independent
   implementations produce **bit-identical** conjunctions, Pc, and
@@ -83,7 +84,7 @@ starboard-protocol/
 │   ├── canon.hpp          Canonical constants, lattice, pinned exp/sincos
 │   ├── id.hpp             Canonical identity (root of the pair transform)
 │   ├── geometry.hpp       Layer 0: encounter kernel
-│   ├── kepler.hpp         Layer 0: canonical two-body ephemeris
+│   ├── propagator.hpp     Layer 0: canonical J2 propagator
 │   ├── screening.hpp      Layer 0: canonical conjunction search
 │   ├── covariance.hpp     Layer 0: Starboard-Pc
 │   ├── rules.hpp          Layer 1: the Rules of the Orbital Road

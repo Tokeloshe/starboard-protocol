@@ -7,93 +7,103 @@
 // ============================================================================
 // Starboard — canonical conjunction search (SPEC §4.2a).
 //
-// The end-to-end Layer-0 screener: propagate both craft along the canonical
-// ephemeris, find the range-rate sign changes on the canonical 32 s grid,
-// refine each candidate TCA with a fixed 48-step bisection (the sign of
-// g(t) = dr·dv is a shared, bit-deterministic quantity, so every
-// implementation walks the identical bracket sequence), then evaluate the
+// Operates on the shared reference-epoch bundle (SPEC §3.3): both craft's
+// canonical states at a common epoch near TCA. It propagates both along the
+// canonical J2 propagator (propagator.hpp) over the BOUNDED arc [0, arc],
+// arc <= SCREEN_ARC_MAX_S, finds range-rate sign changes on the 32 s grid,
+// refines each candidate TCA with a fixed 48-step bisection (the sign of
+// g(t) = dr.dv is a shared, bit-deterministic quantity), then evaluates the
 // encounter kernel — miss geometry and Starboard-Pc — at the refined TCA.
 //
-// The linear screen() in geometry.hpp remains the *encounter kernel* (its
-// inside-bubble semantics also cover the t=0 co-drifting case here); this
-// header is the normative way to FIND the encounter.
+// The bounded arc is the point: over <= 1024 s the propagator matches truth
+// to ~1 m, so the shared computation is not merely deterministic, it is
+// deterministic AND physically valid to well inside the covariance. Longer
+// lead times are handled operationally by re-screening against a fresh
+// reference-epoch bundle as TCA approaches (SPEC §4.2a, rolling CDMs), not by
+// extrapolating an unphysically long arc.
 //
-// An altitude-band prefilter (periapsis/apoapsis rings farther apart than
-// R_SCREEN can never conjunct) rejects the overwhelming majority of catalog
-// pairs with two square roots and no propagation.
+// The altitude-band prefilter (periapsis/apoapsis rings farther apart than
+// R_SCREEN can never conjunct) rejects most catalog pairs with a few square
+// roots and no propagation. Radial bounds come from vis-viva + angular
+// momentum — algebraic, no atan2.
 // ============================================================================
 
 #include "covariance.hpp"
-#include "kepler.hpp"
+#include "propagator.hpp"
 
 namespace starboard {
 
 // A found conjunction plus the canonical states at TCA — Layer 1 evaluates
 // rule geometry AT the encounter (SPEC §5.1), so the screener returns it.
+// t_ca is relative to the shared reference epoch.
 struct OrbitConjunction {
-    Conjunction conj;        // t_ca relative to the shared state epoch (s)
-    CraftState  a_tca;       // canonical state of A at TCA
-    CraftState  b_tca;       // canonical state of B at TCA
+    Conjunction conj;
+    CraftState  a_tca;
+    CraftState  b_tca;
 };
 
 namespace detail {
 
-// Radial bounds [periapsis, apoapsis] from a canonical state — no atan2:
-// e^2 = (e sinE0)^2 + (e cosE0)^2.
+// Radial bounds [periapsis, apoapsis] from a state via vis-viva — algebraic,
+// no atan2. Non-elliptic (energy >= 0) is reported unbounded so it is never
+// prefiltered out.
 inline void radial_bounds(const CraftState& s, double* r_lo, double* r_hi) {
     const double rn = s.position.norm();
     const double v2 = s.velocity.dot(s.velocity);
-    const double alpha = 2.0 / rn - v2 / canon::MU_EARTH_M3S2;
-    if (alpha <= 0.0) {
+    const double energy = 0.5 * v2 - canon::MU_EARTH_M3S2 / rn;
+    if (energy >= 0.0) {
         *r_lo = 0.0;
-        *r_hi = 1.0e18;   // unbounded (non-elliptic): never prefiltered out
+        *r_hi = 1.0e18;
         return;
     }
-    const double a = 1.0 / alpha;
-    const double esE0 = s.position.dot(s.velocity) /
-                        std::sqrt(canon::MU_EARTH_M3S2 * a);
-    const double ecE0 = 1.0 - rn / a;
-    const double e = std::sqrt(esE0 * esE0 + ecE0 * ecE0);
+    const double a = -canon::MU_EARTH_M3S2 / (2.0 * energy);
+    const double h = s.position.cross(s.velocity).norm();
+    double e2 = 1.0 + (2.0 * energy * h * h) /
+                          (canon::MU_EARTH_M3S2 * canon::MU_EARTH_M3S2);
+    if (e2 < 0.0) { e2 = 0.0; }
+    const double e = std::sqrt(e2);
     *r_lo = a * (1.0 - e);
     *r_hi = a * (1.0 + e);
 }
 
 } // namespace detail
 
-// Canonical pairwise search over [0, horizon_s]. Returns true and fills
-// `out` with the EARLIEST detected conjunction; false if the pair is clean.
-// Inputs are canonicalized internally; outputs are canonical.
+// Canonical pairwise search over [0, arc]. `a0`,`b0` are the shared states at
+// the reference epoch; `arc_s` is clamped to SCREEN_ARC_MAX_S. Returns true
+// and fills `out` with the EARLIEST detected conjunction; false if clean.
 inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
                           const Sym33& cov_a, const Sym33& cov_b,
-                          double r_hb, double horizon_s,
+                          double r_hb, double arc_s,
                           OrbitConjunction* out) {
     const CraftState a0 = canonicalize(a0_in);
     const CraftState b0 = canonicalize(b0_in);
+    double arc = arc_s;
+    if (arc > canon::SCREEN_ARC_MAX_S) { arc = canon::SCREEN_ARC_MAX_S; }
+    if (arc <= 0.0) { return false; }
 
-    // Altitude-band prefilter (SPEC §4.2a): disjoint radial rings by more
-    // than R_SCREEN can never come within R_SCREEN.
+    // Altitude-band prefilter (SPEC §4.2a). J2 shifts the instantaneous
+    // radius negligibly over the arc, so the two-body rings are a safe outer
+    // bound; pad by the along-arc radial excursion is unnecessary at this
+    // gate (R_SCREEN margin dominates).
     double alo, ahi, blo, bhi;
     detail::radial_bounds(a0, &alo, &ahi);
     detail::radial_bounds(b0, &blo, &bhi);
     const double gap = (alo > bhi) ? (alo - bhi) : (blo - ahi);
     if (gap > canon::R_SCREEN_M) { return false; }
 
-    // g(t) = dr.dv — the range-rate sign function on the canonical grid.
-    const auto g_at = [&a0, &b0](double t, Vec3* dr_out, Vec3* dv_out) {
-        const CraftState sa = kepler_propagate(a0, t);
-        const CraftState sb = kepler_propagate(b0, t);
+    const auto g_at = [&a0, &b0](double t, Vec3* dr_out) {
+        const CraftState sa = propagate(a0, t);
+        const CraftState sb = propagate(b0, t);
         const Vec3 dr = sb.position - sa.position;
         const Vec3 dv = sb.velocity - sa.velocity;
         if (dr_out != nullptr) { *dr_out = dr; }
-        if (dv_out != nullptr) { *dv_out = dv; }
         return dr.dot(dv);
     };
 
-    // Finalize a candidate TCA: canonical states, kernel, Pc.
     const auto finalize = [&](double t_star, OrbitConjunction* oc) {
         const double t_q = canon::quantize(t_star, canon::Q_TIME_S);
-        oc->a_tca = canonicalize(kepler_propagate(a0, t_q));
-        oc->b_tca = canonicalize(kepler_propagate(b0, t_q));
+        oc->a_tca = canonicalize(propagate(a0, t_q));
+        oc->b_tca = canonicalize(propagate(b0, t_q));
         Conjunction c;
         c.t_ca = t_q;
         c.miss_vector = oc->b_tca.position - oc->a_tca.position;
@@ -108,36 +118,35 @@ inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
         return c.detected;
     };
 
-    // t = 0: inside-bubble semantics (already at/past closest approach but
-    // still inside the screening radius).
+    // t = 0: inside-bubble (already at/past closest approach but still inside
+    // the screening radius).
     Vec3 dr0;
-    double g_prev = g_at(0.0, &dr0, nullptr);
-    if ((g_prev >= 0.0) && (dr0.norm() < canon::R_SCREEN_M)) {
+    const double g0 = g_at(0.0, &dr0);
+    if ((g0 >= 0.0) && (dr0.norm() < canon::R_SCREEN_M)) {
         if (finalize(0.0, out)) { return true; }
     }
 
-    // Canonical grid walk: a range minimum lies in every step where g goes
-    // negative -> non-negative. SCREEN_STEP_S is chosen well below the
-    // shortest relative-dynamics timescale, so each step holds at most one
-    // extremum (SPEC §4.2a).
+    // Grid walk: a range minimum lies in every step where g goes negative ->
+    // non-negative. SCREEN_STEP_S is far below the relative-dynamics
+    // timescale, so each step holds at most one extremum (SPEC §4.2a).
+    double g_prev = g0;
     double t_prev = 0.0;
     const double step = canon::SCREEN_STEP_S;
-    for (double t = step; t_prev < horizon_s;
-         t = ((t + step) < horizon_s) ? (t + step) : horizon_s) {
-        const double g_now = g_at(t, nullptr, nullptr);
+    for (double t = step;; t = ((t + step) < arc) ? (t + step) : arc) {
+        const double g_now = g_at(t, nullptr);
         if ((g_prev < 0.0) && (g_now >= 0.0)) {
             double lo = t_prev;
             double hi = t;
             for (int i = 0; i < canon::TCA_BISECT_ITERS; ++i) {
                 const double mid = 0.5 * (lo + hi);
-                if (g_at(mid, nullptr, nullptr) < 0.0) { lo = mid; }
+                if (g_at(mid, nullptr) < 0.0) { lo = mid; }
                 else { hi = mid; }
             }
             if (finalize(0.5 * (lo + hi), out)) { return true; }
         }
         g_prev = g_now;
         t_prev = t;
-        if (t >= horizon_s) { break; }
+        if (t >= arc) { break; }
     }
     return false;
 }

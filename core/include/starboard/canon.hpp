@@ -38,6 +38,8 @@ constexpr double Q_TIME_S  = 0.0009765625;        // 2^-10 s
 
 // --- §3.6 Canonical physical constants --------------------------------------
 constexpr double MU_EARTH_M3S2 = 3.986004418e14;  // EGM-96 GM, pinned literal
+constexpr double J2_EARTH      = 1.08262668e-3;   // EGM-96 J2, pinned literal
+constexpr double R_EARTH_M     = 6378137.0;       // WGS-84 equatorial radius
 constexpr double PI = 3.141592653589793;          // pinned literal
 
 // --- §4 Screening & actionability -------------------------------------------
@@ -51,10 +53,16 @@ constexpr double DEFAULT_VAR_M2 = 1.0e6;   // (1 km)^2: conservative default whe
                                            // a craft publishes no covariance
 
 // --- §4.2 Canonical ephemeris & conjunction search ---------------------------
-constexpr double SCREEN_STEP_S      = 32.0; // 2^5 s canonical search grid
-constexpr int    TCA_BISECT_ITERS   = 48;   // fixed bisection depth for TCA
-constexpr int    KEPLER_BISECT_ITERS = 48;  // fixed bisection depth, Kepler eq.
-constexpr int    KEPLER_POLISH_ITERS = 3;   // fixed Newton polish, Kepler eq.
+// The shared input is a state+covariance bundle at a common reference epoch
+// near TCA (a CDM; SPEC §3.3). The canonical propagator is a fixed-step
+// RK4 integration of two-body + J2 zonal dynamics — deterministic (pinned
+// step, IEEE ops only, no transcendentals), and physically accurate to ~1 m
+// over the bounded screening arc, which keeps the dynamics-model error a
+// small fraction of R_SAFE and the covariance (SPEC §4.2, error budget).
+constexpr double PROP_STEP_S        = 4.0;   // 2^2 s fixed integrator step
+constexpr double SCREEN_ARC_MAX_S   = 1024.0; // 2^10 s bounded screening arc
+constexpr double SCREEN_STEP_S      = 32.0;  // 2^5 s range-rate search grid
+constexpr int    TCA_BISECT_ITERS   = 48;    // fixed bisection depth for TCA
 
 // --- §5 Rule predicates ------------------------------------------------------
 constexpr double OVERTAKE_COS   = 0.3826834323650898; // cos(67.5 deg), pinned
@@ -122,13 +130,14 @@ inline double canon_exp(double x) {
 
 // --- §4.6 canon_sincos: the second pinned transcendental pair -----------------
 // sin(x) and cos(x) for |x| <= 2^20 rad, defined operation-by-operation so
-// every conformant implementation computes identical bits. Needed only by the
-// canonical ephemeris (kepler.hpp); the Layer-1 rule predicates remain
-// trig-free. Three-part Cody-Waite reduction by pi/2 (each split constant has
-// its low 27 mantissa bits zeroed, so k*PIO2_HI and k*PIO2_MED are EXACT for
-// |k| < 2^26), then Taylor kernels on |r| <= pi/4 in pinned Horner order.
-// Kernel truncation < 1 ulp; total error ~1-2 ulp. libm sin/cos MUST NOT be
-// substituted on the verdict path.
+// every conformant implementation computes identical bits. Used by the
+// Clohessy-Wiltshire maneuver dynamics (frames.hpp); the canonical propagator
+// and the Layer-1 rule predicates are trig-free, so canon_exp is the only
+// pinned transcendental on the VERDICT path. Three-part Cody-Waite reduction
+// by pi/2 (each split constant has its low 27 mantissa bits zeroed, so
+// k*PIO2_HI and k*PIO2_MED are EXACT for |k| < 2^26), then Taylor kernels on
+// |r| <= pi/4 in pinned Horner order. Kernel truncation < 1 ulp; total error
+// ~1-2 ulp. libm sin/cos MUST NOT be substituted.
 inline void canon_sincos(double x, double* sin_out, double* cos_out) {
     constexpr double INV_PIO2 = 0.6366197723675814;          // pinned literal
     constexpr double PIO2_HI  = 1.5707963109016418;          // 0x3FF921FB50000000

@@ -77,15 +77,17 @@ int main() {
     std::printf("=============================================================\n\n");
 
     // ------------------------------------------------------------------
-    // Physical setup. All three craft cross the +x (or -y) node of the
-    // reference orbit; phases are back-propagated so the encounters happen
-    // mid-demo. Epoch of all states: t = 0 (GPS ms below).
+    // Physical setup. The shared input is a conjunction data message (CDM):
+    // both craft's states + covariances at a common reference epoch T0, near
+    // the encounter. Phases are set so the crossing falls ~15 min out, inside
+    // the bounded screening arc where the canonical J2 propagator is accurate
+    // to ~1 m. (Longer lead times re-screen against a fresh CDM.)
     // ------------------------------------------------------------------
     const double R = 6.93e6;                                   // ~552 km alt
     const double n_ref = std::sqrt(canon::MU_EARTH_M3S2 / (R * R * R));
-    const double T_CROSS = 2700.0;                             // s, Act I TCA
-    const uint64_t T0_MS = 1401000000000ull;                   // shared epoch
-    const double HORIZON = 3.0 * (2.0 * canon::PI / n_ref);    // 3 revs
+    const double T_CROSS = 900.0;                              // s, Act I TCA
+    const uint64_t T0_MS = 1401000000000ull;                   // CDM epoch
+    const double ARC = canon::SCREEN_ARC_MAX_S;                // bounded arc
 
     // ACME-1: equatorial, reaches the +x node at T_CROSS.
     CraftDescriptor acme;
@@ -94,16 +96,28 @@ int main() {
     acme.state = circular_state(R, 0.0, -n_ref * T_CROSS);
     acme.covariance = Sym33::diagonal(9.0e4);                  // sigma 300 m
 
-    // ORBX-9: 45 deg inclined, 150 m higher, reaches the same node at the
-    // same instant — a genuine crossing conjunction.
+    // ORBX-9: crosses ACME-1 at T_CROSS, 150 m above, on a 45 deg-tilted
+    // track — a genuine crossing. Built at the crossing instant against
+    // ACME's J2-propagated state, then back-propagated to the CDM epoch, so
+    // the 150 m miss holds under the canonical (J2) propagator.
     CraftDescriptor orbx;
     orbx.object_id = make_object_id("2026-044B");
     orbx.tier = Tier::OPERATIONAL;
-    const double r_orbx = R + 150.0;
-    const double n_orbx =
-        std::sqrt(canon::MU_EARTH_M3S2 / (r_orbx * r_orbx * r_orbx));
-    orbx.state = circular_state(r_orbx, 0.25 * canon::PI, -n_orbx * T_CROSS);
     orbx.covariance = Sym33::diagonal(9.0e4);
+    {
+        const CraftState a_cross = propagate(canonicalize(acme.state), T_CROSS);
+        const Vec3 rhat = a_cross.position.normalized();
+        const Vec3 vhat = a_cross.velocity.normalized();
+        const Vec3 chat = rhat.cross(vhat).normalized();
+        const double r_o = a_cross.position.norm() + 150.0;
+        const double v_o = std::sqrt(canon::MU_EARTH_M3S2 / r_o);
+        const double tilt = 0.25 * canon::PI;                 // 45 deg
+        CraftState orbx_cross;
+        orbx_cross.position = rhat * r_o;
+        orbx_cross.velocity =
+            (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_o;
+        orbx.state = propagate(orbx_cross, -T_CROSS);
+    }
 
     std::printf(" Act I - two rivals, zero communication\n");
     std::printf("   ACME-1 [2026-001A]  ACME Space    equatorial, 552 km\n");
@@ -114,16 +128,16 @@ int main() {
     OrbitConjunction oc_a, oc_b;
     const bool found_a = screen_orbits(acme.state, orbx.state,
                                        acme.covariance, orbx.covariance,
-                                       hbr, HORIZON, &oc_a);
+                                       hbr, ARC, &oc_a);
     const bool found_b = screen_orbits(orbx.state, acme.state,
                                        orbx.covariance, acme.covariance,
-                                       hbr, HORIZON, &oc_b);
+                                       hbr, ARC, &oc_b);
     if (!found_a || !found_b) {
         std::printf("No conjunction found (unexpected).\n");
         return 1;
     }
 
-    stamp(-oc_a.conj.t_ca, "both on-board searches sweep 3 revolutions:");
+    stamp(-oc_a.conj.t_ca, "both on-board searches sweep the 1024 s arc (J2):");
     std::printf("   ACME-1   TCA in %.3f s   miss %6.1f m   Pc = %.3e\n",
                 oc_a.conj.t_ca, oc_a.conj.miss_distance, oc_a.conj.pc);
     std::printf("   ORBX-9   TCA in %.3f s   miss %6.1f m   Pc = %.3e\n",
@@ -201,11 +215,11 @@ int main() {
           "burn executed. ORBX-9 holds course - predictability");
     std::printf("           is the stand-on craft's entire job.\n\n");
 
-    // Timeline to TCA: true inter-craft range from the canonical ephemeris.
-    for (int k = 2; k >= 1; --k) {
-        const double t = oc_a.conj.t_ca - 900.0 * static_cast<double>(k);
-        const CraftState sa = kepler_propagate(canonicalize(acme.state), t);
-        const CraftState sb = kepler_propagate(canonicalize(orbx.state), t);
+    // Timeline to TCA: true inter-craft range from the canonical propagator.
+    for (int k = 3; k >= 1; --k) {
+        const double t = oc_a.conj.t_ca * (1.0 - 0.25 * static_cast<double>(k));
+        const CraftState sa = propagate(canonicalize(acme.state), t);
+        const CraftState sb = propagate(canonicalize(orbx.state), t);
         char line[96];
         std::snprintf(line, sizeof(line), "range %8.1f km, closing",
                       (sb.position - sa.position).norm() / 1000.0);
@@ -257,39 +271,38 @@ int main() {
     std::printf("-------------------------------------------------------------\n");
     std::printf(" Act II - a derelict joins the window (3-body, one pass)\n\n");
 
-    // HULK: dead upper stage, 30 deg inclined orbit 40 m above ACME-1,
-    // crossing ACME-1's -y node ~24 minutes before the ORBX-9 encounter.
-    const double t_hulk = T_CROSS - (0.5 * canon::PI) / n_ref;
+    // HULK: dead upper stage that crosses ACME-1 ~7 min out (before the
+    // ORBX-9 encounter), 40 m above, on a 35 deg-tilted track. Built at its
+    // crossing instant, then back-propagated to the CDM epoch.
+    const double t_hulk = 420.0;                              // s, within arc
     CraftDescriptor hulk;
     hulk.object_id = make_object_id("1999-025DEB");
     hulk.tier = Tier::DEORBITING;
     hulk.can_maneuver = false;
     hulk.trust = TrustLevel::ASSERTED;     // nobody can verify a corpse
-    const double r_hulk = R + 40.0;
-    const double n_hulk =
-        std::sqrt(canon::MU_EARTH_M3S2 / (r_hulk * r_hulk * r_hulk));
-    // Same node family as ACME's -y crossing: phase -pi/2 at t_hulk, plane
-    // rotated about the node line (y axis) -> parametrize about x with the
-    // node shifted by -pi/2.
     {
-        const double v_h = std::sqrt(canon::MU_EARTH_M3S2 / r_hulk);
-        const double th0 = -0.5 * canon::PI - n_hulk * t_hulk;
-        const double ci = std::cos(30.0 * canon::PI / 180.0);
-        const double si = std::sin(30.0 * canon::PI / 180.0);
-        // Orbit in plane rotated 30 deg about the y axis; theta measured
-        // from +x: pos = r*(cos th * ci, sin th, -cos th * si).
-        hulk.state.position = Vec3(r_hulk * std::cos(th0) * ci,
-                                   r_hulk * std::sin(th0),
-                                   -r_hulk * std::cos(th0) * si);
-        hulk.state.velocity = Vec3(-v_h * std::sin(th0) * ci,
-                                   v_h * std::cos(th0),
-                                   v_h * std::sin(th0) * si);
+        // ACME-1's state at the intended crossing instant.
+        const CraftState a_cross = propagate(canonicalize(acme.state), t_hulk);
+        const Vec3 rhat = a_cross.position.normalized();
+        const Vec3 vhat = a_cross.velocity.normalized();
+        const Vec3 chat = rhat.cross(vhat).normalized();      // cross-track
+        const double r_h = a_cross.position.norm() + 40.0;
+        const double v_h = std::sqrt(canon::MU_EARTH_M3S2 / r_h);
+        // 40 m above ACME, velocity tilted 35 deg out of ACME's plane -> a
+        // genuine crossing at t_hulk.
+        const double tilt = 35.0 * canon::PI / 180.0;
+        CraftState hulk_cross;
+        hulk_cross.position = rhat * r_h;
+        hulk_cross.velocity =
+            (vhat * std::cos(tilt) + chat * std::sin(tilt)) * v_h;
+        // Back-propagate to the shared CDM epoch.
+        hulk.state = propagate(hulk_cross, -t_hulk);
     }
 
     OrbitConjunction oc_h;
     const bool found_h = screen_orbits(acme.state, hulk.state,
                                        acme.covariance, hulk.covariance,
-                                       2.0 * canon::DEFAULT_HBR_M, HORIZON,
+                                       2.0 * canon::DEFAULT_HBR_M, ARC,
                                        &oc_h);
     if (!found_h) {
         std::printf("Derelict conjunction not found (unexpected).\n");
