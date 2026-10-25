@@ -92,6 +92,13 @@ inline CraftState propagate(const CraftState& s0, double dt) {
     if (dt == 0.0) { return s; }
     const double sign = (dt < 0.0) ? -1.0 : 1.0;
     const double adt = sign * dt;
+    // Domain guard (SPEC §3.7): a non-finite or absurd |dt| would make the
+    // step-count cast below undefined behaviour (NaN -> long) or loop for
+    // hours (dt = 1e12 s is 2.5e11 steps — a watchdog reset). Outside
+    // [0, PROP_DT_MAX_S] the input state is returned unchanged; callers
+    // that can see such a dt (flight integration) MUST validate first.
+    // Bit-neutral inside the domain; every screening call is |dt| <= 1024.
+    if (!(adt <= canon::PROP_DT_MAX_S)) { return s; }
     const double h = sign * canon::PROP_STEP_S;
     // adt is bounded (<= arc, so <= ~256 steps); the cast is exact-floor.
     const long n_full = static_cast<long>(adt / canon::PROP_STEP_S);

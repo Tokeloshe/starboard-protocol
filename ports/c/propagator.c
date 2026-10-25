@@ -64,6 +64,12 @@ CraftState sb_propagate(CraftState s0, double dt)
     }
     sign = (dt < 0.0) ? -1.0 : 1.0;
     adt = sign * dt;
+    /* Domain guard (SPEC §3.7): NaN/Inf/absurd |dt| would be UB in the
+     * (long) cast or an hours-long loop. Bit-neutral inside the domain. */
+    if (!(adt <= SB_PROP_DT_MAX_S))
+    {
+        return s;
+    }
     h = sign * SB_PROP_STEP_S;
     n_full = (long)(adt / SB_PROP_STEP_S);
     for (i = 0; i < n_full; ++i)

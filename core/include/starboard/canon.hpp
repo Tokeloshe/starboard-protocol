@@ -74,6 +74,8 @@ constexpr double PROP_STEP_S        = 4.0;   // 2^2 s fixed integrator step
 constexpr double SCREEN_ARC_MAX_S   = 1024.0; // 2^10 s bounded screening arc
 constexpr double SCREEN_STEP_S      = 32.0;  // 2^5 s range-rate search grid
 constexpr int    TCA_BISECT_ITERS   = 48;    // fixed bisection depth for TCA
+constexpr double PROP_DT_MAX_S      = 1048576.0; // 2^20 s: propagate() domain
+                                             // bound (SPEC §3.7)
 
 // --- §5 Rule predicates ------------------------------------------------------
 constexpr double OVERTAKE_COS   = 0.3826834323650898; // cos(67.5 deg), pinned

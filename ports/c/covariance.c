@@ -49,7 +49,7 @@ double sb_cov_quad(Sym33 c, Vec3 u, Vec3 v)
     return ((u.x * row_x) + (u.y * row_y)) + (u.z * row_z);
 }
 
-static Vec3 sb_pinned_perpendicular(Vec3 n)
+Vec3 sb_pinned_perpendicular(Vec3 n)
 {
     const double ax = (n.x < 0.0) ? -n.x : n.x;
     const double ay = (n.y < 0.0) ? -n.y : n.y;
@@ -130,6 +130,12 @@ double sb_starboard_pc(const Conjunction *conj, Sym33 c_comb, double r_hb)
     a  = sb_cov_quad(c_comb, e1, e1);
     b  = sb_cov_quad(c_comb, e2, e2);
     cx = sb_cov_quad(c_comb, e1, e2);
+    /* Non-finite repair (SPEC §4.4): NaN/Inf would yield a NaN Pc that
+     * silently fails the actionability gate. Fail safe: Pc := 1. */
+    if (((a - a) != 0.0) || ((b - b) != 0.0) || ((cx - cx) != 0.0))
+    {
+        return 1.0;
+    }
     if (a < SB_VAR_FLOOR_M2)
     {
         a = SB_VAR_FLOOR_M2;

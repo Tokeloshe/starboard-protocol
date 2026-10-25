@@ -79,7 +79,11 @@ inline bool screen_orbits(const CraftState& a0_in, const CraftState& b0_in,
     const CraftState b0 = canonicalize(b0_in);
     double arc = arc_s;
     if (arc > canon::SCREEN_ARC_MAX_S) { arc = canon::SCREEN_ARC_MAX_S; }
-    if (arc <= 0.0) { return false; }
+    // Written as !(arc > 0) so a NaN arc is rejected too: with `arc <= 0` a
+    // NaN slipped through and the grid loop below never terminated (its
+    // `t >= arc` exit is false for NaN) — a hang, i.e. a watchdog reset in
+    // flight. Bit-neutral for every non-NaN arc.
+    if (!(arc > 0.0)) { return false; }
 
     // Altitude-band prefilter (SPEC §4.2a). J2 shifts the instantaneous
     // radius negligibly over the arc, so the two-body rings are a safe outer

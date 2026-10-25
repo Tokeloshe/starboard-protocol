@@ -9,7 +9,7 @@
 #include "starboard.h"
 #include <math.h>
 
-static void sb_radial_bounds(CraftState s, double *r_lo, double *r_hi)
+void sb_radial_bounds(CraftState s, double *r_lo, double *r_hi)
 {
     const double rn = sb_vnorm(s.position);
     const double v2 = sb_vdot(s.velocity, s.velocity);
@@ -100,7 +100,9 @@ bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
     {
         arc = SB_SCREEN_ARC_MAX_S;
     }
-    if (arc <= 0.0)
+    /* !(arc > 0) also rejects a NaN arc, which `arc <= 0` let through into
+     * a grid loop that never terminated (SPEC §3.7). */
+    if (!(arc > 0.0))
     {
         return false;
     }

@@ -123,6 +123,14 @@ inline double starboard_pc(const Conjunction& conj, const Sym33& c_comb,
     double a  = cov_quad(c_comb, e1, e1);
     double b  = cov_quad(c_comb, e2, e2);
     double cx = cov_quad(c_comb, e1, e2);
+    // Non-finite repair (SPEC §4.4): a NaN/Inf entry in the shared
+    // covariance propagates to a NaN Pc, and a NaN compares false against
+    // PC_ACTIONABLE — the same gate-disabling failure PSD repair closes. Both
+    // craft hold the same bytes, so both take this branch: Pc := 1, fail
+    // safe and still symmetric. (x - x != 0 exactly when x is NaN or Inf.)
+    if (((a - a) != 0.0) || ((b - b) != 0.0) || ((cx - cx) != 0.0)) {
+        return 1.0;
+    }
     if (a < canon::VAR_FLOOR_M2) { a = canon::VAR_FLOOR_M2; }
     if (b < canon::VAR_FLOOR_M2) { b = canon::VAR_FLOOR_M2; }
     // PSD repair (SPEC §4.4): a malformed or hostile covariance can project
