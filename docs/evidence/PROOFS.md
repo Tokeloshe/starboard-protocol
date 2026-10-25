@@ -15,7 +15,7 @@ signed overflow, undefined shifts, division by zero.
 | `theorem1` | **Theorem 1, decision layer.** `evaluate(A,B)` and `evaluate(B,A)` name the same give-way craft, by the same rule, with the same advisory flag; the named craft is one of the pair; roles are complementary; a pairwise rule always decides; and the Table 8-1 trust rules hold | every tier, trust level and capability of both craft; every pair of 12-byte ids; every 64-bit epoch; **every possible predicate function** | ✅ 174 properties, ~1 s |
 | `cid` | **Theorem 1, conjunction id.** The 36-byte message hashed into the conjunction id is identical from both perspectives, orders the pair canonically, and embeds `RULESET_ID` | every pair of ids (equal or not), every epoch | ✅ 215 properties, < 1 s |
 | `notice` | **Inter-satellite input safety.** Any 204-byte frame into the flock ledger: no UB or memory error; every frame accounted for exactly once; a relay is nothing or exactly one notice | all 2¹⁶³² frames | ✅ 1 601 properties, ~5 s |
-| `cdm` | **Uplink input safety.** Any byte string up to 40 bytes into the CDM parser: no UB or memory error; a defined status; an error line inside the input | all strings ≤ 40 bytes | see CI |
+| `cdm` | **Uplink input safety.** Any byte string up to 40 bytes into the CDM parser: no UB or memory error; a defined status; an error line inside the input | all strings ≤ 40 bytes | ⏳ did not finish in 25 min, even at a 12-byte bound (the parser's floating-point frame conversions are bit-blasted); optional target. The parser is covered by ≈129 M fuzz executions under ASan/UBSan and the C-vs-C++ differential instead |
 | `evaluate` | The *real* overtaking/starboard predicates over fully symbolic doubles | every double bit pattern, NaN/∞ included | ⏳ did not finish in 15 min; optional target |
 
 ## How the Theorem 1 proof is structured
@@ -53,6 +53,7 @@ harness defines.
 
 ```
 apt install cbmc
-make -C verification/cbmc          # theorem1 cid notice cdm
+make -C verification/cbmc          # theorem1 cid notice
 make -C verification/cbmc evaluate # optional, heavy
+make -C verification/cbmc cdm      # optional, heavy
 ```

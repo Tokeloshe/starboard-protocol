@@ -122,9 +122,9 @@ the C port lands, across languages) — not yet across target architectures.
 ## 8. Machine-checked proofs  **[assurance]** — *Theorem 1 machine-checked*
 
 *v0.6:* CBMC proves Theorem 1's decision layer for every possible predicate
-function plus the conjunction-id lemma, and memory safety of the notice and
-CDM parsers (`docs/evidence/PROOFS.md`). Still open: the real predicates over
-fully symbolic doubles (did not finish), Theorems 2–4, the broad-phase
+function plus the conjunction-id lemma, and memory safety of the inter-satellite
+notice parser (`docs/evidence/PROOFS.md`). Still open: the real predicates over
+fully symbolic doubles and the whole CDM parser (both did not finish), Theorems 2–4, the broad-phase
 superset property, and a proof assistant development.
 
 Theorems 1–4 have proofs short enough to verify by inspection, plus empirical

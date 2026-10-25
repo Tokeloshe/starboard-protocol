@@ -93,7 +93,7 @@ jobs:
         run: sed -n '/^| MCU/,$p' baremetal.txt >> "$GITHUB_STEP_SUMMARY"
 
   formal:
-    name: CBMC proofs (Theorem 1, conjunction id, uplink parsers)
+    name: CBMC proofs (Theorem 1, conjunction id, ISL notice parser)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -103,7 +103,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q cbmc
       - name: proofs
-        run: make -C verification/cbmc theorem1 cid notice cdm
+        run: make -C verification/cbmc theorem1 cid notice
 
   fuzz:
     name: libFuzzer (differential C vs C++, flight layer, flock)

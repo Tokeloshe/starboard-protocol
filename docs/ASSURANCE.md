@@ -14,7 +14,7 @@ checkout, that is a bug: please report it.*
 | A6 | Conformance vectors pass | SB-001…SB-020 | `ctest --test-dir build` |
 | A7 | Real **CCSDS CDMs** are ingested **identically** by independent implementations | C99 vs C++ bindings: v2 transcript (400 generated CDMs incl. 104 malformed) + differential fuzzer | `verification/fuzz/run.sh` |
 | A8 | Decimal ingest is **exact** | 119 M fuzzed inputs equal glibc's correctly-rounded `strtod` | `verification/fuzz/run.sh` |
-| A9 | Hostile **uplink / ISL input** cannot crash or corrupt | ASan+UBSan fuzzing (≈129 M executions) + CBMC proofs for every 204-byte notice frame and every CDM ≤ 40 B | `verification/fuzz/run.sh` · `make -C verification/cbmc notice cdm` · [FUZZING](evidence/FUZZING.md) |
+| A9 | Hostile **uplink / ISL input** cannot crash or corrupt | ASan+UBSan fuzzing (≈129 M executions) + CBMC proof for every 204-byte notice frame (the CDM parser is fuzzed, not proved) | `verification/fuzz/run.sh` · `make -C verification/cbmc notice` · [FUZZING](evidence/FUZZING.md) |
 | A10 | **Single-event upsets** are detected and contained | fault injection: single upsets corrected 2-of-3, triple upsets → FAULT, nothing commanded; RAM corruption of a stored CDM detected | `make -C ports/c test_fsw_fi && ports/c/test_fsw_fi examples/cdm` |
 | A11 | Bad input **fails safe**, never "all clear" | NaN/Inf/out-of-domain rejection; NaN-arc hang fixed; non-finite Pc repair | `ports/c/test_fsw`, DESIGN §3.7 |
 | A12 | Fits a **CubeSat MCU** | 43.2 KB code, 24.8 KB RAM, 6.4 KB worst-case stack, no heap, recursion-free (proved) | `tools/baremetal.sh` · FLIGHT §2 |

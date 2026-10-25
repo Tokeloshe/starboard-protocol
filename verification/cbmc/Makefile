@@ -10,7 +10,10 @@ CBMC := cbmc -I$(C) --function harness
 .PHONY: all theorem1 cid evaluate notice cdm
 # `evaluate` (real predicates over fully symbolic doubles) is a heavy
 # optional target: it did not finish in 15 min on a 2026 laptop-class VM.
-all: theorem1 cid notice cdm
+# `cdm` (the whole CDM parser, including its floating-point frame
+# conversions) is likewise optional: it did not finish in 25 min even at a
+# 12-byte input bound. The parser is covered by fuzzing instead.
+all: theorem1 cid notice
 
 # Theorem 1, decision layer: every tier/trust/capability, every id pair,
 # every epoch, EVERY possible predicate function.
