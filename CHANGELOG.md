@@ -69,7 +69,8 @@ new input paths, or bit-neutral hardening.
   FPU-less ARM satellites. Detected by the self-test; fixed by
   `ports/c/softdouble.c` (49 M cases verified against hardware).
 - **CBMC proofs**: Theorem 1 decision layer (all predicate functions),
-  conjunction-id lemma, memory safety of notice and CDM parsing.
+  conjunction-id lemma, memory safety of inter-satellite notice parsing
+  (the CDM parser is fuzzed, not proved).
 - **Fuzzing** (libFuzzer + ASan/UBSan, ~129 M executions), including
   C-vs-C++ differential fuzzing that found an identity-truncation bug.
 - **MISRA C:2012** record with documented deviations (`tools/misra.sh`).
