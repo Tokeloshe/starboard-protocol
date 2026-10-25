@@ -1,0 +1,133 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Starboard Protocol — continuous verification.
+#
+# Every claim in the README is re-proven here on every push: conformance
+# vectors, bit-agreement across compilers / languages / CPU architectures /
+# bare-metal MCUs, the flight-software test suites with fault injection,
+# fuzzing, MISRA C:2012 analysis and the CBMC proofs of Theorem 1.
+name: verify
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: conformance + bit-agreement (gcc, clang, C++ & C)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: build + ctest (SB-001..SB-020, v2 transcript, C flight library)
+        run: |
+          cmake -B build -S .
+          cmake --build build -j4
+          ctest --test-dir build --output-on-failure
+      - name: compiler x optimization x language matrix
+        run: tools/bitcheck.sh
+      - name: crypto + registry (RFC 8032, Wycheproof, C vs C++ differential)
+        run: |
+          make -C ports/c/tests CC=gcc CXX=g++ all-tests
+          make -C ports/c/tests clean || rm -rf ports/c/tests/build
+          make -C ports/c/tests CC=clang CXX=clang++ test diff
+      - name: demos
+        run: |
+          ./build/starboard_crossing_demo
+          make -C ports/c murmuration sbctl
+          ports/c/murmuration
+          for f in examples/cdm/*.cdm; do ports/c/sbctl cdm "$f" --verified; done
+
+  sanitizers:
+    name: ASan + UBSan (flight layer with SEU fault injection)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: C99 flight library under sanitizers
+        run: |
+          make -C ports/c clean
+          make -C ports/c CC=gcc \
+            CFLAGS="-std=c99 -O1 -g -ffp-contract=off -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined -fno-sanitize-recover=all" \
+            LDLIBS="-lm -fsanitize=address,undefined" check
+      - name: C++ conformance under sanitizers
+        run: |
+          g++ -std=c++17 -O1 -g -ffp-contract=off -Icore/include \
+              -fsanitize=address,undefined -fno-sanitize-recover=all \
+              conformance/runner.cpp -o runner && ./runner
+
+  cross-architecture:
+    name: 11 CPU architectures under QEMU (+ non-conformance controls)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchains
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q qemu-user gcc-i686-linux-gnu \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-arm-linux-gnueabi \
+            gcc-powerpc-linux-gnu gcc-powerpc64le-linux-gnu gcc-riscv64-linux-gnu \
+            gcc-sparc64-linux-gnu gcc-mips-linux-gnu gcc-s390x-linux-gnu
+      - name: campaign
+        run: tools/crossarch.sh --markdown | tee crossarch.txt
+      - name: summary
+        if: always()
+        run: sed -n '/^| Target/,$p' crossarch.txt >> "$GITHUB_STEP_SUMMARY"
+
+  bare-metal:
+    name: bare-metal Cortex-M3 / M4F / M7 (no OS, QEMU MPS2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-arm-none-eabi libnewlib-arm-none-eabi qemu-system-arm
+      - name: campaign
+        run: tools/baremetal.sh --markdown | tee baremetal.txt
+      - name: summary
+        if: always()
+        run: sed -n '/^| MCU/,$p' baremetal.txt >> "$GITHUB_STEP_SUMMARY"
+
+  formal:
+    name: CBMC proofs (Theorem 1, conjunction id, uplink parsers)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: cbmc
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q cbmc
+      - name: proofs
+        run: make -C verification/cbmc theorem1 cid notice cdm
+
+  fuzz:
+    name: libFuzzer (differential C vs C++, flight layer, flock)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang runtimes
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang-18 libclang-rt-18-dev
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+      - name: fuzz (60 s per target)
+        run: verification/fuzz/run.sh 60
+
+  misra:
+    name: MISRA C:2012 (cppcheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: cppcheck
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q cppcheck
+      - name: analysis
+        run: tools/misra.sh

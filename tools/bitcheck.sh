@@ -77,13 +77,40 @@ if [ "$run" -eq 0 ]; then
     exit 2
 fi
 
-# --- Cross-LANGUAGE: the independent C99 port must match the same golden ----
+# --- The EXTENDED transcript (suite v2): CW maneuvers, returns, multi-body
+# windows, broad-phase sets, exact decimal ingest and the CDM binding. Same
+# matrix: every C++ compiler x optimization level must reproduce it too.
+GOLDEN_EXT=conformance/expected_bits_ext.txt
+for cxx in "${COMPILERS[@]}"; do
+    for opt in "${OPTS[@]}"; do
+        bin="$TMP/ext_$(echo "$cxx$opt" | tr -c 'a-zA-Z0-9' _)"
+        if ! $cxx $FLAGS_COMMON $opt conformance/ext_bits.cpp -o "$bin" \
+             2> "$TMP/build.log"; then
+            echo "SKIP  ext: $cxx $opt  (does not build here)"
+            continue
+        fi
+        "$bin" > "$TMP/ext.txt"
+        run=$((run + 1))
+        if diff -q "$GOLDEN_EXT" "$TMP/ext.txt" > /dev/null; then
+            echo "OK    ext:  $cxx $opt"
+        else
+            echo "FAIL  ext:  $cxx $opt  — extended transcript diverges:"
+            diff "$GOLDEN_EXT" "$TMP/ext.txt" | sed 's/^/      /'
+            fail=1
+        fi
+    done
+done
+
+# --- Cross-LANGUAGE: the independent C99 port must match BOTH goldens -------
 # (SPEC §10 / CONFORMANCE.md SB-C2). This is the strongest bit-agreement
 # evidence: not just cross-compiler of one source, but a second, independent
-# implementation in a different language reproducing the transcript.
-CPORT_SRC=(ports/c/canon.c ports/c/geometry.c ports/c/propagator.c
+# implementation in a different language reproducing the transcripts.
+CPORT_LIB=(ports/c/canon.c ports/c/geometry.c ports/c/propagator.c
            ports/c/covariance.c ports/c/screening.c ports/c/rules.c
-           ports/c/sha512.c ports/c/registry.c ports/c/main.c)
+           ports/c/maneuver.c ports/c/multibody.c ports/c/broadphase.c
+           ports/c/sha512.c ports/c/registry.c ports/c/ed25519.c
+           ports/c/cdm.c ports/c/fsw.c ports/c/ccsds.c ports/c/flock.c
+           ports/c/softdouble.c)
 CC_LIST=()
 for cc in gcc clang cc; do
     command -v "$cc" >/dev/null 2>&1 && CC_LIST+=("$cc")
@@ -91,19 +118,24 @@ done
 if [ -f ports/c/main.c ]; then
     for cc in "${CC_LIST[@]}"; do
         for opt in "-O0" "-O2" "-O3 -march=native"; do
-            bin="$TMP/cport_$(echo "$cc$opt" | tr -c 'a-zA-Z0-9' _)"
-            if ! $cc -std=c99 -ffp-contract=off $opt "${CPORT_SRC[@]}" -lm \
-                 -o "$bin" 2> "$TMP/cbuild.log"; then
+            tag=$(echo "$cc$opt" | tr -c 'a-zA-Z0-9' _)
+            if ! $cc -std=c99 -ffp-contract=off $opt "${CPORT_LIB[@]}" \
+                 ports/c/main.c -lm -o "$TMP/cport_$tag" 2> "$TMP/cbuild.log" ||
+               ! $cc -std=c99 -ffp-contract=off $opt "${CPORT_LIB[@]}" \
+                 ports/c/ext_bits.c -lm -o "$TMP/cext_$tag" 2>> "$TMP/cbuild.log"; then
                 echo "SKIP  C99 port: $cc $opt  (does not build here)"
                 continue
             fi
-            "$bin" > "$TMP/cbits.txt"
-            run=$((run + 1))
-            if diff -q "$GOLDEN" "$TMP/cbits.txt" > /dev/null; then
-                echo "OK    C99 port: $cc $opt"
+            "$TMP/cport_$tag" > "$TMP/cbits.txt"
+            "$TMP/cext_$tag" > "$TMP/cext.txt"
+            run=$((run + 2))
+            if diff -q "$GOLDEN" "$TMP/cbits.txt" > /dev/null &&
+               diff -q "$GOLDEN_EXT" "$TMP/cext.txt" > /dev/null; then
+                echo "OK    C99 port: $cc $opt  (v1 + v2)"
             else
                 echo "FAIL  C99 port: $cc $opt  — transcript diverges:"
                 diff "$GOLDEN" "$TMP/cbits.txt" | sed 's/^/      /'
+                diff "$GOLDEN_EXT" "$TMP/cext.txt" | sed 's/^/      /'
                 fail=1
             fi
         done
@@ -111,7 +143,7 @@ if [ -f ports/c/main.c ]; then
 fi
 
 if [ "$fail" -eq 0 ]; then
-    echo "bitcheck: ALL $run BUILDS BIT-IDENTICAL (SB-C2 evidence:" \
-         "C++ cross-compiler + C99 cross-language)"
+    echo "bitcheck: ALL $run TRANSCRIPTS BIT-IDENTICAL (SB-C2 evidence:" \
+         "C++ cross-compiler + C99 cross-language, v1 + v2)"
 fi
 exit "$fail"
