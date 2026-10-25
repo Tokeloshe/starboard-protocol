@@ -16,6 +16,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Disable FP contraction in-source (SPEC §3.5): a fused multiply-add would
 // change verdict-path bits, breaking cross-vendor agreement (demonstrated: a
 // -mfma contraction-on build shifts pc-kernel and verdict-sweep). Every TU
@@ -69,6 +73,7 @@ typedef char sb_assert_double_is_8_bytes[(sizeof(double) == 8) ? 1 : -1];
 #define SB_SCREEN_ARC_MAX_S  (1024.0)
 #define SB_SCREEN_STEP_S     (32.0)
 #define SB_TCA_BISECT_ITERS  (48)
+#define SB_PROP_DT_MAX_S     (1048576.0)     /* 2^20 s, SPEC §3.7 */
 
 // ---------------------------------------------------------------------------
 // §5 Rule predicates.
@@ -79,10 +84,19 @@ typedef char sb_assert_double_is_8_bytes[(sizeof(double) == 8) ? 1 : -1];
 #define SB_EPS_BEARING    (0.0625)
 
 // ---------------------------------------------------------------------------
+// §6 Maneuver, §7 Multi-body.
+// ---------------------------------------------------------------------------
+#define SB_MANEUVER_MARGIN        (1.25)
+#define SB_MIN_LEAD_S             (1.0)
+#define SB_RETURN_PHASING_ORBITS  (2)
+#define SB_MAX_WINDOW_CRAFT       (32U)
+#define SB_MAX_WINDOW_CONJ        (64U)
+
+// ---------------------------------------------------------------------------
 // §11 identity of the ruleset itself.
 // ---------------------------------------------------------------------------
-#define SB_RULESET_ID     (0x53420001u)
-#define SB_TCA_BUCKET_MS  (16384u)
+#define SB_RULESET_ID     (0x53420001U)
+#define SB_TCA_BUCKET_MS  (16384U)
 
 // ===========================================================================
 // canon.hpp — quantization + pinned transcendentals.
@@ -161,6 +175,7 @@ Sym33  sb_cov_add(Sym33 a, Sym33 b);
 Sym33  sb_cov_quantize(Sym33 c);
 Sym33  sb_combined_covariance(Sym33 cov_a, Sym33 cov_b);
 double sb_cov_quad(Sym33 c, Vec3 u, Vec3 v);
+Vec3   sb_pinned_perpendicular(Vec3 n);
 double sb_starboard_pc(const Conjunction *conj, Sym33 c_comb, double r_hb);
 bool   sb_actionable(const Conjunction *conj);
 Conjunction sb_assess(CraftState a, CraftState b, Sym33 cov_a, Sym33 cov_b,
@@ -175,6 +190,7 @@ typedef struct {
     CraftState  b_tca;
 } OrbitConjunction;
 
+void sb_radial_bounds(CraftState s, double *r_lo, double *r_hi);
 bool sb_screen_orbits(CraftState a0_in, CraftState b0_in,
                       Sym33 cov_a, Sym33 cov_b, double r_hb, double arc_s,
                       OrbitConjunction *out);
@@ -230,11 +246,112 @@ typedef struct {
     bool         advisory;
 } GiveWayVerdict;
 
+#define SB_CONJ_ID_MSG_BYTES (36U)
+void     sb_conjunction_id_message(const ObjectId *a, const ObjectId *b,
+                                   uint64_t tca_epoch_ms,
+                                   uint8_t msg[SB_CONJ_ID_MSG_BYTES]);
+uint64_t sb_fnv1a64(const uint8_t *msg, uint32_t n);
 uint64_t sb_conjunction_id(const ObjectId *a, const ObjectId *b,
                            uint64_t tca_epoch_ms);
 GiveWayVerdict sb_evaluate(const CraftDescriptor *self,
                            const CraftDescriptor *other,
                            uint64_t tca_epoch_ms);
+
+// ===========================================================================
+// frames.hpp / maneuver.hpp — Hill frame, CW dynamics, give-way burn (§6).
+// ===========================================================================
+typedef struct {
+    double m[3][3];
+} Mat3;
+
+typedef struct {
+    Vec3 r;
+    Vec3 v;
+} HillState;
+
+typedef struct {
+    bool   required;
+    Vec3   dv_eci;
+    Vec3   dv_hill;
+    double dv_mag;
+    double displacement_m;
+} GiveWayPlan;
+
+typedef struct {
+    Vec3   mirror_dv_hill;
+    Vec3   final_dv_hill;
+    double wait_s;
+    double transfer_s;
+    double total_dv;
+} MirrorReturnPlan;
+
+typedef struct {
+    Vec3   dv1_hill;
+    Vec3   dv2_hill;
+    double transfer_s;
+    double total_dv;
+} ReturnPlan;
+
+Mat3      sb_mat3_identity(void);
+Vec3      sb_mat3_mul(const Mat3 *a, Vec3 v);
+Vec3      sb_mat3_tmul(const Mat3 *a, Vec3 v);
+Vec3      sb_mat3_solve(const Mat3 *a, Vec3 b);
+Mat3      sb_hill_basis(CraftState s);
+double    sb_mean_motion(CraftState s);
+Mat3      sb_cw_phi_rr(double n, double t);
+Mat3      sb_cw_phi_rv(double n, double t);
+Mat3      sb_cw_phi_vr(double n, double t);
+Mat3      sb_cw_phi_vv(double n, double t);
+HillState sb_cw_propagate(HillState x0, double n, double t);
+GiveWayPlan sb_plan_give_way(CraftState self_now, CraftState self_tca,
+                             const Conjunction *conj,
+                             bool self_is_canonical_lo, double r_safe);
+MirrorReturnPlan sb_plan_mirror_return(Vec3 giveway_dv_hill, double n,
+                                       int phasing_orbits);
+ReturnPlan sb_plan_return(HillState offset, double n);
+
+// ===========================================================================
+// multibody.hpp — Layer 7 window cascade (§7).
+// ===========================================================================
+typedef struct {
+    uint32_t   a;
+    uint32_t   b;
+    uint64_t   tca_epoch_ms;
+    CraftState a_tca;
+    CraftState b_tca;
+} WindowEntry;
+
+typedef struct {
+    uint64_t     conjunction_id;
+    uint32_t     give_way_index;
+    uint32_t     stand_on_index;
+    DecidingRule deciding_rule;
+    bool         escalated;
+    bool         advisory;
+} WindowVerdict;
+
+uint32_t sb_resolve_window(const CraftDescriptor *craft, uint32_t n_craft,
+                           WindowEntry *entries, uint32_t n_entries,
+                           WindowVerdict *out);
+
+// ===========================================================================
+// broadphase.hpp — Stage-1 radial-band sweep (§4.8).
+// ===========================================================================
+typedef struct {
+    uint32_t i;
+    uint32_t j;
+} SbPair;
+
+typedef struct {
+    double   lo;
+    double   hi;
+    uint32_t idx;
+} SbBand;
+
+uint32_t sb_radial_band_pairs(const CraftState *objs, uint32_t n,
+                              SbBand *bands, uint32_t *active,
+                              SbPair *out, uint32_t cap, bool *overflow,
+                              double margin);
 
 // ===========================================================================
 // crypto/sha512.hpp
@@ -255,8 +372,8 @@ void sb_sha512(const uint8_t *msg, uint64_t len, uint8_t out[64]);
 // ===========================================================================
 // registry.hpp — Merkle over SHA-512.
 // ===========================================================================
-#define SB_HASH_BYTES  (64u)
-#define SB_ENTRY_BYTES (75u)
+#define SB_HASH_BYTES  (64U)
+#define SB_ENTRY_BYTES (75U)
 
 typedef struct {
     ObjectId object_id;
@@ -271,5 +388,9 @@ void sb_node_hash(const uint8_t left[SB_HASH_BYTES],
                   uint8_t out[SB_HASH_BYTES]);
 void sb_merkle_root(uint8_t (*nodes)[SB_HASH_BYTES], uint32_t n,
                     uint8_t out[SB_HASH_BYTES]);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* STARBOARD_H */

@@ -24,7 +24,15 @@ add_executable(starboard_conformance conformance/runner.cpp)
 target_link_libraries(starboard_conformance PRIVATE starboard_core)
 add_test(NAME conformance COMMAND starboard_conformance)
 
-# Cross-language SB-C2: the independent MISRA-C99 port (ports/c/) must
-# reproduce the pinned --bits transcript byte-for-byte.
-add_test(NAME cport_bitmatch
+# Extended transcript (suite v2, informative): maneuvers, windows,
+# broad-phase, exact decimal ingest, the CDM binding.
+add_executable(starboard_ext_bits conformance/ext_bits.cpp)
+target_link_libraries(starboard_ext_bits PRIVATE starboard_core)
+add_test(NAME ext_transcript
+         COMMAND sh -c "$<TARGET_FILE:starboard_ext_bits> | diff - ${CMAKE_SOURCE_DIR}/conformance/expected_bits_ext.txt")
+
+# Cross-language SB-C2 + the C99 flight library: the independent port
+# (ports/c/) must reproduce BOTH transcripts byte-for-byte, and its flight
+# layer, flock and soft-double tests must pass (incl. fault injection).
+add_test(NAME cport_flight_library
          COMMAND make -C ${CMAKE_SOURCE_DIR}/ports/c check)

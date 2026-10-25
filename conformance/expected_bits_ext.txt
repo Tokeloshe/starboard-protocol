@@ -1,0 +1,7 @@
+starboard-ext-transcript v2 ruleset 53420001
+maneuver       36EF96E651BAF8DB
+returns        E4283E6ED65BB29F
+window         0E5F4313AE7BAC65
+broadphase     AFD4F07F57AEC168
+decimal        8EB5DAEF2AD26E6A
+cdm-binding    BEDB3BB04A47699D

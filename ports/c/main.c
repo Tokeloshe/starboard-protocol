@@ -22,7 +22,7 @@
 #define R_LEO      (6.93e6)
 #define V_LEO      (7600.0)
 #define HORIZON_S  (3.0 * 5700.0)
-#define EPOCH_MS   (1401000000000ull)
+#define EPOCH_MS   (1401000000000ULL)
 
 static uint64_t bits_of(double x)
 {
@@ -38,7 +38,7 @@ typedef struct {
 
 static void fold_init(Fold *f)
 {
-    f->h = 14695981039346656037ull;
+    f->h = 14695981039346656037ULL;
 }
 
 static void fold_add_u64(Fold *f, uint64_t v)
@@ -46,8 +46,8 @@ static void fold_add_u64(Fold *f, uint64_t v)
     int i;
     for (i = 0; i < 8; ++i)
     {
-        f->h ^= (v >> (8 * i)) & 0xFFull;
-        f->h *= 1099511628211ull;
+        f->h ^= (v >> (8 * i)) & 0xFFULL;
+        f->h *= 1099511628211ULL;
     }
 }
 
@@ -161,7 +161,7 @@ static CraftState crossing_against(CraftState ref, double tc, double above,
 /* --- SB-012 LCG population --- */
 static uint64_t lcg_next(uint64_t s)
 {
-    return (s * 6364136223846793005ull) + 1442695040888963407ull;
+    return (s * 6364136223846793005ULL) + 1442695040888963407ULL;
 }
 
 static void make_sweep_pair(int i, uint64_t *s, CraftDescriptor *a,
@@ -255,11 +255,11 @@ static void load_entries(RegistryEntry entries[5])
         0xF3,0x26,0x9F,0x50,0x9A,0x40,0x9E,0x92,0xC0,0xE3,0xCD,0x6D,
         0xE9,0xA5,0xD9,0x78,0x9C,0x35,0xC5,0xD5};
 
-    entries[0] = make_entry("2026-001A", k0, p0, 1398408000000ull);
-    entries[1] = make_entry("2026-044B", k1, p1, 1398408000000ull);
-    entries[2] = make_entry("1998-067X", k2, p2, 1375080000000ull);
-    entries[3] = make_entry("2025-500C", k3, p3, 1400136000000ull);
-    entries[4] = make_entry("2025-501D", k3, p3, 1400136000000ull);
+    entries[0] = make_entry("2026-001A", k0, p0, 1398408000000ULL);
+    entries[1] = make_entry("2026-044B", k1, p1, 1398408000000ULL);
+    entries[2] = make_entry("1998-067X", k2, p2, 1375080000000ULL);
+    entries[3] = make_entry("2025-500C", k3, p3, 1400136000000ULL);
+    entries[4] = make_entry("2025-501D", k3, p3, 1400136000000ULL);
 }
 
 static void emit_bits(void)
@@ -356,7 +356,7 @@ static void emit_bits(void)
     printf("pc-kernel      %016llX\n", (unsigned long long)fp.h);
 
     fold_init(&fv);
-    s = 0x5EEDull;
+    s = 0x5EEDULL;
     for (i = 0; i < 4096; ++i)
     {
         CraftDescriptor a;
@@ -378,18 +378,18 @@ static void emit_bits(void)
 
     fold_init(&fr);
     load_entries(entries);
-    for (ri = 0u; ri < 5u; ++ri)
+    for (ri = 0U; ri < 5U; ++ri)
     {
         sb_leaf_hash(&entries[ri], nodes[ri]);
     }
-    sb_merkle_root(nodes, 5u, rroot);
-    for (ri = 0u; ri < SB_HASH_BYTES; ri += 8u)
+    sb_merkle_root(nodes, 5U, rroot);
+    for (ri = 0U; ri < SB_HASH_BYTES; ri += 8U)
     {
-        uint64_t w = 0u;
+        uint64_t w = 0U;
         uint32_t j;
-        for (j = 0u; j < 8u; ++j)
+        for (j = 0U; j < 8U; ++j)
         {
-            w |= (uint64_t)rroot[ri + j] << (8u * j);
+            w |= (uint64_t)rroot[ri + j] << (8U * j);
         }
         fold_add_u64(&fr, w);
     }

@@ -22,3 +22,4 @@
 #include "frames.hpp"      // Hill frame & Clohessy-Wiltshire dynamics
 #include "maneuver.hpp"    // give-way burn & return-to-slot
 #include "multibody.hpp"   // multi-craft window resolution
+#include "cdm.hpp"         // CDM binding: CCSDS CDM -> canonical shared input

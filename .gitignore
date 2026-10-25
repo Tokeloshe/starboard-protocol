@@ -8,3 +8,17 @@ conformance/validation/*.csv
 __pycache__/
 ports/c/sb_bits
 ports/c/sb_c_bits.txt
+ports/c/*.o
+ports/c/libstarboard.a
+ports/c/sb_ext
+ports/c/sbctl
+ports/c/murmuration
+ports/c/test_fsw
+ports/c/test_fsw_fi
+ports/c/test_flock
+ports/c/test_softdouble
+ports/c/sb_c_ext.txt
+ports/c/tests/build/
+verification/fuzz/crash-*
+verification/fuzz/leak-*
+verification/fuzz/timeout-*

@@ -63,42 +63,64 @@ Tier sb_effective_tier(TrustLevel trust, Tier asserted)
 }
 
 /* --- conjunction id (FNV-1a-64) --- */
-uint64_t sb_conjunction_id(const ObjectId *a, const ObjectId *b,
-                           uint64_t tca_epoch_ms)
+/* The 36-byte message the conjunction id hashes (SPEC §9.3):
+ * lo_id(12) || hi_id(12) || LE64(tca_epoch_ms / TCA_BUCKET_MS) ||
+ * LE32(RULESET_ID). Split out so the CBMC proof of Theorem 1 can show the
+ * MESSAGE is identical from both perspectives (verification/cbmc); the id
+ * then agrees because FNV-1a is a pure function of it. */
+void sb_conjunction_id_message(const ObjectId *a, const ObjectId *b,
+                               uint64_t tca_epoch_ms,
+                               uint8_t msg[SB_CONJ_ID_MSG_BYTES])
 {
     const bool a_lo = (sb_id_compare(a, b) <= 0);
     const ObjectId *lo = a_lo ? a : b;
     const ObjectId *hi = a_lo ? b : a;
-    const uint64_t prime = 1099511628211ull;
-    uint64_t h = 14695981039346656037ull;
-    uint64_t bucket;
-    int i;
+    const uint64_t bucket = tca_epoch_ms / SB_TCA_BUCKET_MS;
+    uint32_t i;
+    for (i = 0U; i < 12U; ++i)
+    {
+        msg[i] = (uint8_t)lo->c[i];
+        msg[12U + i] = (uint8_t)hi->c[i];
+    }
+    for (i = 0U; i < 8U; ++i)
+    {
+        msg[24U + i] = (uint8_t)(bucket >> (8U * i));
+    }
+    for (i = 0U; i < 4U; ++i)
+    {
+        msg[32U + i] = (uint8_t)((uint32_t)SB_RULESET_ID >> (8U * i));
+    }
+}
 
-    for (i = 0; i < 12; ++i)
+uint64_t sb_fnv1a64(const uint8_t *msg, uint32_t n)
+{
+    const uint64_t prime = 1099511628211ULL;
+    uint64_t h = 14695981039346656037ULL;
+    uint32_t i;
+    for (i = 0U; i < n; ++i)
     {
-        h ^= (uint64_t)(uint8_t)lo->c[i];
-        h *= prime;
-    }
-    for (i = 0; i < 12; ++i)
-    {
-        h ^= (uint64_t)(uint8_t)hi->c[i];
-        h *= prime;
-    }
-    bucket = tca_epoch_ms / SB_TCA_BUCKET_MS;
-    for (i = 0; i < 8; ++i)
-    {
-        h ^= (uint64_t)(uint8_t)(bucket >> (8 * i));
-        h *= prime;
-    }
-    for (i = 0; i < 4; ++i)
-    {
-        h ^= (uint64_t)(uint8_t)(SB_RULESET_ID >> (8 * i));
+        h ^= (uint64_t)msg[i];
         h *= prime;
     }
     return h;
 }
 
-/* --- rule predicates --- */
+uint64_t sb_conjunction_id(const ObjectId *a, const ObjectId *b,
+                           uint64_t tca_epoch_ms)
+{
+    uint8_t msg[SB_CONJ_ID_MSG_BYTES];
+    sb_conjunction_id_message(a, b, tca_epoch_ms, msg);
+    return sb_fnv1a64(msg, SB_CONJ_ID_MSG_BYTES);
+}
+
+/* --- rule predicates ---
+ * SB_PROOF_ABSTRACT_PREDICATES is defined ONLY by the CBMC proof of Theorem 1
+ * (verification/cbmc): it removes these two bodies so the proof can quantify
+ * over EVERY possible predicate function. Never defined in a flight build. */
+#ifdef SB_PROOF_ABSTRACT_PREDICATES
+bool sb_overtakes(const CraftDescriptor *x, const CraftDescriptor *y);
+bool sb_sees_on_starboard(const CraftDescriptor *x, const CraftDescriptor *y);
+#else
 static bool sb_overtakes(const CraftDescriptor *x, const CraftDescriptor *y)
 {
     const double sx = sb_vnorm(x->state.velocity);
@@ -137,6 +159,7 @@ static bool sb_sees_on_starboard(const CraftDescriptor *x,
     }
     return -(sb_vdot(dv, starboard)) > (SB_EPS_BEARING * dvn);
 }
+#endif
 
 /* --- evaluate ---
  * The verdict consumes ONLY the descriptors (states at TCA + registry facts)
@@ -190,7 +213,7 @@ GiveWayVerdict sb_evaluate(const CraftDescriptor *self,
             }
             else
             {
-                lo_gives_way = ((cid & 1ull) == 0ull);
+                lo_gives_way = ((cid & 1ULL) == 0ULL);
                 rule = RULE_FAIR_COIN;
             }
         }

@@ -39,14 +39,14 @@ static const uint64_t SB_K[80] = {
 
 static uint64_t sb_rotr64(uint64_t x, unsigned n)
 {
-    return (x >> n) | (x << (64u - n));
+    return (x >> n) | (x << (64U - n));
 }
 
 static uint64_t sb_load_be64(const uint8_t *p)
 {
     uint64_t r = 0;
     unsigned i;
-    for (i = 0; i < 8u; ++i)
+    for (i = 0; i < 8U; ++i)
     {
         r = (r << 8) | (uint64_t)p[i];
     }
@@ -56,9 +56,9 @@ static uint64_t sb_load_be64(const uint8_t *p)
 static void sb_store_be64(uint8_t *p, uint64_t x)
 {
     unsigned i;
-    for (i = 0; i < 8u; ++i)
+    for (i = 0; i < 8U; ++i)
     {
-        p[i] = (uint8_t)(x >> (56u - (8u * i)));
+        p[i] = (uint8_t)(x >> (56U - (8U * i)));
     }
 }
 
@@ -75,11 +75,11 @@ static void sb_compress(uint64_t h[8], const uint8_t block[128])
     uint64_t g;
     uint64_t hh;
 
-    for (i = 0; i < 16u; ++i)
+    for (i = 0; i < 16U; ++i)
     {
-        w[i] = sb_load_be64(block + (8u * i));
+        w[i] = sb_load_be64(block + (8U * i));
     }
-    for (i = 16u; i < 80u; ++i)
+    for (i = 16U; i < 80U; ++i)
     {
         const uint64_t s0 = sb_rotr64(w[i - 15], 1) ^ sb_rotr64(w[i - 15], 8) ^
                             (w[i - 15] >> 7);
@@ -97,7 +97,7 @@ static void sb_compress(uint64_t h[8], const uint8_t block[128])
     g = h[6];
     hh = h[7];
 
-    for (i = 0; i < 80u; ++i)
+    for (i = 0; i < 80U; ++i)
     {
         const uint64_t big_s1 = sb_rotr64(e, 14) ^ sb_rotr64(e, 18) ^
                                 sb_rotr64(e, 41);
@@ -154,7 +154,7 @@ void sb_sha512_update(Sha512State *st, const uint8_t *data, uint64_t len)
 
     if (st->buf_len > 0)
     {
-        uint64_t need = 128u - st->buf_len;
+        uint64_t need = 128U - st->buf_len;
         uint64_t i;
         if (need > len)
         {
@@ -166,16 +166,16 @@ void sb_sha512_update(Sha512State *st, const uint8_t *data, uint64_t len)
         }
         st->buf_len += need;
         off += need;
-        if (st->buf_len == 128u)
+        if (st->buf_len == 128U)
         {
             sb_compress(st->h, st->buf);
             st->buf_len = 0;
         }
     }
-    while ((len - off) >= 128u)
+    while ((len - off) >= 128U)
     {
         sb_compress(st->h, data + off);
-        off += 128u;
+        off += 128U;
     }
     while (off < len)
     {
@@ -197,14 +197,14 @@ void sb_sha512_final(Sha512State *st, uint8_t out[64])
     uint8_t len_block[16];
     unsigned j;
 
-    pad[0] = 0x80u;
-    if (used < 112u)
+    pad[0] = 0x80U;
+    if (used < 112U)
     {
-        zero_bytes = (112u - used) - 1u;
+        zero_bytes = (112U - used) - 1U;
     }
     else
     {
-        zero_bytes = (240u - used) - 1u;
+        zero_bytes = (240U - used) - 1U;
     }
     for (i = 0; i < zero_bytes; ++i)
     {
@@ -217,9 +217,9 @@ void sb_sha512_final(Sha512State *st, uint8_t out[64])
     sb_store_be64(len_block + 8, bits_lo);
     sb_sha512_update(st, len_block, 16);
 
-    for (j = 0; j < 8u; ++j)
+    for (j = 0; j < 8U; ++j)
     {
-        sb_store_be64(out + (8u * j), st->h[j]);
+        sb_store_be64(out + (8U * j), st->h[j]);
     }
 }
 
