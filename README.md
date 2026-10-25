@@ -4,31 +4,49 @@
 
 ### The Rules of the Orbital Road
 
-*An open, deterministic give-way protocol for satellites — two spacecraft from
-rival operators, with **no radio contact**, independently compute the **same
-answer** for who moves out of the way.*
+**An open, deterministic collision-avoidance protocol for satellites.**
+Two spacecraft from different operators, with no radio contact, each work out
+alone *which one should move out of the way*, and both always get the same
+answer.
 
+[![verify](https://github.com/Tokeloshe/starboard-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/Tokeloshe/starboard-protocol/actions/workflows/ci.yml)
+[![Conformance](https://img.shields.io/badge/conformance-20%2F20%20vectors-brightgreen.svg)](docs/CONFORMANCE.md)
+[![Bit-identical](https://img.shields.io/badge/58%20builds-bit--identical-8A2BE2.svg)](tools/bitcheck.sh)
+[![Architectures](https://img.shields.io/badge/CPU%20architectures-11%20bit--identical-1f6feb.svg)](docs/evidence/CROSS-ARCH.md)
+[![Proofs](https://img.shields.io/badge/Theorem%201-CBMC%20proved-2A6E3F.svg)](docs/evidence/PROOFS.md)
+[![MISRA C](https://img.shields.io/badge/MISRA%20C%3A2012-checked-2A6E3F.svg)](docs/evidence/MISRA.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/code-AGPL--3.0-blue.svg)](LICENSE)
 [![Spec: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey.svg)](docs/DESIGN.md)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus)](core/include/starboard/)
-[![MISRA C99](https://img.shields.io/badge/MISRA-C99%20port-2A6E3F.svg)](ports/c/)
-[![Conformance](https://img.shields.io/badge/conformance-21%2F21%20vectors-brightgreen.svg)](docs/CONFORMANCE.md)
-[![Bit--identical](https://img.shields.io/badge/29%20builds-bit--identical-8A2BE2.svg)](tools/bitcheck.sh)
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Tokeloshe-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/Tokeloshe)
 
 </div>
 
 ---
 
-At sea, this problem was solved 150 years ago. When two vessels cross, the one
-that has the other to **starboard** gives way — both skippers compute the same
-answer from the same geometry, no negotiation required. That single convention
-(COLREGS) is why millions of ships share the water without a central traffic
-controller.
+## The idea in one minute
 
-Low Earth orbit has no such convention. ~10,000 active satellites today,
-credible plans for 100,000+, and cross-operator close approaches are still
-resolved by **email**. Starboard is the missing rule of the road:
+**The problem.** There are about 10,000 working satellites in orbit today,
+and plans for over 100,000. When two satellites from *different* companies
+are about to pass too close, operators still sort it out by **email**. That
+doesn't scale, and it fails when someone is slow, unreachable, or the link
+is down.
+
+**The idea is 150 years old.** Ships solved this at sea with the
+*rules of the road* (COLREGS). When two vessels cross, the one that sees the
+other on its **starboard** (right) side gives way. Both captains look at the
+same situation and reach the same conclusion. Nobody has to call anybody.
+
+**Starboard does that for satellites.** Each satellite receives the standard
+close-approach warning (a *Conjunction Data Message* from a tracking
+provider) and runs Starboard on board:
+
+1. 🛰️ It computes the risk of collision.
+2. ⚖️ It applies five simple rules to decide who gives way.
+3. 🔁 Both satellites get the **exact same answer, down to the last bit**, so
+   exactly one of them moves. No messages needed.
+4. ↩️ The one that moves makes the smallest possible burn, then glides back
+   to its slot.
+5. 🐦 It tells its neighbours, and they pass it on, so the whole
+   constellation knows, like a flock of birds turning together.
 
 ```
                         ORBX-9  ●
@@ -44,193 +62,238 @@ resolved by **email**. Starboard is the missing rule of the road:
                   its slot  ⤺  ╱
 ```
 
-1. **Both craft compute the identical verdict** from shared, symmetric inputs
-   — down to the last bit. No communication is required for correctness.
-2. **Comms only confirm, they never decide.** A jammed link changes nothing.
-3. **The give-way craft flies a minimum-Δv burn** and afterwards flocks back
-   to its assigned slot, like a murmuration settling.
+## Try it in 60 seconds
 
-## See it happen
+You need a C/C++ compiler, CMake and `make`.
 
-```
+```bash
+git clone https://github.com/Tokeloshe/starboard-protocol && cd starboard-protocol
+
+# 1. Two rival satellites avoid each other, with zero communication
 cmake -B build && cmake --build build && ./build/starboard_crossing_demo
+
+# 2. Feed it a real-format collision warning (CCSDS CDM) and see the decision
+make -C ports/c && ports/c/sbctl cdm examples/cdm/shell_vs_debris.cdm --verified
+
+# 3. Watch a 72-satellite flock learn about one satellite's maneuver
+ports/c/murmuration
 ```
 
-Two rival satellites are placed on genuinely crossing orbits and left alone —
-everything below is *found and decided* independently on each side:
+What the flock demo shows: one satellite dodges a dead fragment and announces
+it. The news ripples through the inter-satellite links, hop by hop (`*` =
+just heard, `#` = already knew), until every satellite holds the same picture.
 
 ```text
- T-015:00  both on-board searches sweep the 1024 s arc (J2):
-   ACME-1   TCA in 900.000 s   miss  150.0 m   Pc = 1.043e-03
-   ORBX-9   TCA in 900.000 s   miss  150.0 m   Pc = 1.043e-03
-   Pc bits  ACME 0x3F5117B3E9975E2E | ORBX 0x3F5117B3E9975E2E  IDENTICAL [ok]
+   hop  1  #*.........**...............................................*...........   5/72 know
+   hop  3  ###*.....*####*.......*##*.........**...........#*.........*##*.......*#  24/72 know
+   hop  6  ######*##########*.*########*...*######*.....*######*...*########*.*####  59/72 know
+   hop  9  ##########################################*#############################  72/72 know
 
- T-015:00  each runs the Rules of the Orbital Road:
-   ACME-1   verdict: I GIVE WAY   (Rule 4 - starboard)
-   ORBX-9   verdict: I STAND ON   (Rule 4 - starboard)
-   independent agreement: 2026-001A gives way  [ok] no message needed
-
- T-014:40  give-way craft plans min-dv burn (Hill/CW):
-   dv = 1.012 m/s   [naive linear impulse would cost 1.256 m/s -> CW saves 19%]
-
- T+000:00  TCA - closest approach 1280.0 m >= R_SAFE 1024 m  [ok]
-
- T+272:03  burn 2 (0.370 m/s): offset 0.000 m, drift 0.000000 m/s - in slot
-   fuel: give-way 1.012 + return 1.677 = 2.689 m/s total
+   flock ledgers: ALL 71 IDENTICAL (digest 1E3AC8C816631BCF on every satellite)
+   0 conflicts; closest neighbour P5S01 stays 317 km away -> nobody else moves
 ```
 
-Act II adds a dead upper stage to the window — three craft, two conjunctions,
-resolved in one deterministic pass, still without a byte exchanged.
+## Is it ready to put on a satellite?
 
-## The rules, in one picture
+**Short answer: it is ready for a hardware-in-the-loop test campaign and a
+demonstration mission in "shadow mode", where it decides and reports but a
+human approves every burn. It is not yet flight-proven.** Here is exactly
+what that means.
 
-When a close approach is **actionable** (probability of collision ≥ 10⁻⁴, or
-predicted miss inside the safety radius), each craft walks the same chain.
-The first rule that decides, decides; the chain is *total* — there is always
-exactly one give-way craft:
+| ✅ Done and verified in software | ⏳ Still needed before flight |
+|---|---|
+| A complete C99 **flight library**: 43 KB of code, 25 KB RAM, no heap, no recursion | Running on **real flight hardware** (all evidence so far is emulation) |
+| Reads standard **CCSDS conjunction messages**, exactly the same on every computer | An independent **verification & validation** campaign / certification |
+| **Built-in self-test** at every boot: a computer that would get the maths wrong refuses to fly | A **registry service** run by a neutral party, and data-provider partnerships |
+| **Radiation tolerance**: every decision is computed twice and compared bit for bit, with a 2-of-3 vote on any mismatch | A demonstration mission |
+| Same bits on **11 CPU architectures** (incl. the RAD750-class PowerPC used on Mars rovers) and on bare-metal **CubeSat microcontrollers** | Timing measured on the actual flight processor |
+| **Machine-checked proof** that both satellites always agree (CBMC) | Machine-checked proofs of the other three theorems |
+| **Fuzzed** with ~129 million hostile inputs; **MISRA C:2012**-checked | A professional crypto audit |
+| Speaks standard **CCSDS telemetry**; integrates with NASA cFS, F′ or bare metal | |
+
+The honest, detailed list is [`docs/OPEN-PROBLEMS.md`](docs/OPEN-PROBLEMS.md).
+The proof behind every ✅ is in [`docs/ASSURANCE.md`](docs/ASSURANCE.md),
+one row per claim, each with the command that reproduces it.
+
+## What's in the box
+
+| Folder | What it is |
+|---|---|
+| [`docs/DESIGN.md`](docs/DESIGN.md) | ★ **The specification**: the rules, four theorems, every constant |
+| [`docs/FLIGHT.md`](docs/FLIGHT.md) | **How to put it on a spacecraft**: API, memory, modes, self-test, telemetry |
+| [`ports/c/`](ports/c/) | The **C99 flight library** (`libstarboard.a`), the `sbctl` ground tool, the flock demo |
+| [`core/include/starboard/`](core/include/starboard/) | The **C++17 reference** implementation (header-only) |
+| [`conformance/`](conformance/) | The conformance suite: what "Starboard compatible" means, precisely |
+| [`examples/`](examples/) | The crossing demo, the murmuration demo, sample CDMs |
+| [`verification/`](verification/) | CBMC proofs and fuzzers |
+| [`tools/`](tools/) | The bit-check matrix, cross-architecture and bare-metal campaigns, MISRA |
+
+---
+
+## How it works
+
+### The five rules
+
+When a close approach is risky (collision probability ≥ 1 in 10,000, or a
+predicted miss under 1 km), each satellite walks the same chain of rules.
+The first rule that decides, decides, and there is always exactly one answer:
 
 ```mermaid
 flowchart TD
-    A([actionable conjunction]) --> R1{"Rule 1 · capability<br/>can exactly one craft maneuver?"}
-    R1 -- yes --> D1["the <b>able</b> craft gives way<br/><i>(a derelict has right of way)</i>"]
-    R1 -- no --> R2{"Rule 2 · tier<br/>crewed > critical > operational > deorbiting"}
-    R2 -- differs --> D2["<b>lower tier</b> gives way"]
-    R2 -- same --> R3{"Rule 3 · overtaking<br/>is one craft running up the other's track?"}
-    R3 -- yes --> D3["the <b>overtaker</b> gives way"]
-    R3 -- no --> R4{"Rule 4 · starboard ⚓<br/>does exactly one see the other<br/>approaching to starboard?"}
-    R4 -- yes --> D4["the one who <b>sees</b> gives way"]
-    R4 -- no --> D5["Rule 5 · fair coin<br/>LSB of the conjunction id —<br/>deterministic, yet 50/50 over encounters"]
+    A([risky close approach]) --> R1{"Rule 1 · capability<br/>can only one of them maneuver?"}
+    R1 -- yes --> D1["the one that <b>can</b> moves<br/><i>(a dead satellite has right of way)</i>"]
+    R1 -- no --> R2{"Rule 2 · priority<br/>crewed > critical > operational > deorbiting"}
+    R2 -- differs --> D2["the <b>lower priority</b> moves"]
+    R2 -- same --> R3{"Rule 3 · overtaking<br/>is one catching up from behind?"}
+    R3 -- yes --> D3["the <b>overtaker</b> moves"]
+    R3 -- no --> R4{"Rule 4 · starboard ⚓<br/>does exactly one see the other<br/>coming from its right?"}
+    R4 -- yes --> D4["the one who <b>sees</b> moves"]
+    R4 -- no --> D5["Rule 5 · fair coin<br/>a bit of the encounter's id —<br/>deterministic, yet 50/50 over time"]
     style D4 fill:#1a5276,color:#fff
     style D5 fill:#7d6608,color:#fff
 ```
 
-Every predicate is computed from **shared inputs** (a conjunction data message:
-both states + covariances at a common epoch) on a **canonical pair ordering**,
-so agreement isn't hoped for — it's true *by construction*. That's Theorem 1,
-and it's one of four, each with a proof short enough to check by hand:
+Both satellites evaluate the rules on the **same ordered pair** (sorted by
+their international designators), so agreement isn't hoped for: it's true
+*by construction*. That is Theorem 1, now **machine-checked**. It is one of
+four, each with a proof short enough to check by hand:
 
-| # | Theorem | What it buys you |
-|---|---------|------------------|
-| 1 | **Agreement & totality** — `evaluate(A,B) ≡ evaluate(B,A)`, always defined | no geometry, however degenerate, produces a standoff or a contradiction |
-| 2 | **Lies are safe** — if *both* craft maneuver (trust divergence), their burns oppose | the failure mode of disagreement is *extra* clearance, never collision |
-| 3 | **Reversible maneuvers** — the give-way burn is undone *exactly* by a mirror+phase return | fuel cost is bounded and known in advance: ≈ Δv·(2 + 2/N) |
-| 4 | **Multi-body convergence** — N-craft windows resolve in one deterministic pass | no cascading re-planning, no oscillation |
+| # | Theorem | What it means in practice |
+|---|---------|---------------------------|
+| 1 | **Agreement**: both satellites always reach the same verdict | no standoffs, no "after you", no "no, after you" |
+| 2 | **Mistakes are safe**: if both wrongly move, their burns push them *apart* | the failure mode is extra distance, never a collision |
+| 3 | **Reversible**: the dodge is undone exactly by two return burns | the fuel cost is small and known in advance |
+| 4 | **Crowds work**: 3+ satellites resolve in one deterministic pass | no cascading re-planning |
 
-## Determinism you can bank on
+### Trust without trusting anyone
 
-The product claim is not "roughly agrees" — it is **bit-for-bit identical**
-across vendors. That claim is engineered, then measured:
+Rules 1 and 2 use claims a satellite could fake ("I can't maneuver",
+"I'm crewed"). Starboard's answer: **every unverified claim falls back to
+physics.** A satellite whose claim can't be checked is treated like debris:
+you avoid it. Claims can be verified fully offline against a signed registry
+([`docs/REGISTRY.md`](docs/REGISTRY.md)), with verify-only crypto, so no
+signing key ever flies. Even a forged verdict can only change *who* spends
+fuel; it can never steer anyone into anything (Theorem 2).
 
-- **A quantization lattice** (all quanta exact powers of two) snaps shared
-  inputs so sub-quantum noise can't flip a verdict.
-- **A strict arithmetic profile**: the verdict path uses only IEEE-exact
-  operations (`+ − × ÷ √`) plus exactly **two pinned transcendentals**
-  (`canon_exp`, `canon_sincos`) defined operation-by-operation in the spec —
-  no libm, no FMA contraction (pinned in-source *and* by build flag).
-- **Physically honest determinism**: screening propagates a shared
-  conjunction data message with a fixed-step **two-body + J2** integrator
-  over a bounded arc where its error is ~1 m — agreement about *physics*,
-  not about an extrapolated fiction.
-- **Collision probability that's actually right**: encounter-plane Pc via
-  **Patera's contour integral** — validated to ~10⁻¹² against an independent
-  adaptive quadrature for *any* covariance shape, including the extreme
-  along-track-elongated case that breaks series methods by double digits.
+### The flock (Layer 4)
 
-And the measurement:
+Starlings in a murmuration never hold a meeting: each bird watches its
+neighbours, and a turn ripples through the flock. When a Starboard satellite
+commits to a maneuver, it broadcasts a tiny **maneuver notice** (204 bytes).
+Neighbours relay it hop by hop and keep a shared **flock ledger**, and each
+one checks the mover's new path against its own. In a tight formation (the
+demo's 8-satellite cluster, 2 km apart) the flock spots that one satellite's
+dodge would sweep through its neighbours. Every member agrees on who is
+affected, and the cluster screens alternative plans against the whole flock
+until it finds one that keeps everyone clear.
+
+The flock **warns, it never decides.** Every satellite holding the same
+warning can already predict its neighbour's move bit for bit, so a forged
+notice can cost at most a re-check. Details: [`docs/DESIGN.md` §7.7](docs/DESIGN.md),
+wire format [`docs/PROTOCOL.md` §6](docs/PROTOCOL.md).
+
+### Why "the same bits" is a big deal, and how it's proven
+
+"Roughly agrees" isn't good enough: a one-bit difference near a threshold
+could make *both* satellites think the other will move. Starboard pins
+everything that affects the verdict, then measures it:
+
+- a **quantization lattice** snaps inputs so tiny decoding differences can't
+  flip a decision;
+- only IEEE-exact operations plus **two pinned functions** (`exp`,
+  `sin/cos`) defined operation by operation, with no library maths and no
+  fused multiply-add;
+- **exact decimal ingest** of CDMs: no `strtod`, provably correctly rounded;
+- a **J2 propagator** and **Patera's collision-probability integral**,
+  accurate to ~10⁻¹² against an independent reference.
 
 ```text
 $ tools/bitcheck.sh
-OK    g++ / clang++          × {-O0 -O1 -O2 -O3 -O3 -march=native}   (C++17 reference)
-OK    gcc / clang / cc       × {-O0 -O2 -O3 -march=native}           (independent C99 port)
-bitcheck: ALL 29 BUILDS BIT-IDENTICAL
+OK    g++ / clang++   × -O0 … -O3 -march=native   (C++17 reference, v1 + v2 transcripts)
+OK    gcc / clang / cc × -O0 … -O3 -march=native  (independent C99 port, v1 + v2)
+bitcheck: ALL 58 TRANSCRIPTS BIT-IDENTICAL
+
+$ tools/crossarch.sh       # 11 CPU architectures under QEMU
+x86-64 · x86-32 · AArch64 · ARMv7 · ARMv5 soft-float · PowerPC 32 BE (RAD750-class)
+PPC64LE · RISC-V 64 · SPARC64 · MIPS32 BE · s390x          → one set of bits
+CONTROL x87, CONTROL FMA, FINDING libgcc soft-float          → refused by self-test
+
+$ tools/baremetal.sh       # no operating system
+Cortex-M7 · Cortex-M4F · Cortex-M3                           → one set of bits
 ```
 
-Twenty-nine builds — two *languages*, two compiler families, every
-optimization level — reduce to a single hash of a ~50,000-quantity
-transcript. Cross-language agreement is the strongest evidence that the
-**spec**, not an implementation accident, defines the bits.
+**A real find along the way.** Testing on FPU-less ARM chips revealed that
+the standard GCC library routine for double-precision addition
+(`__aeabi_dadd`) rounds wrong in one rare case (an exponent gap of exactly
+33). Starboard's maths hits that case, so two such satellites would
+silently disagree with everyone else. The boot self-test now catches it, and
+Starboard ships a correctly-rounded replacement, verified on 49 million
+cases. Full write-up: [`docs/evidence/CROSS-ARCH.md`](docs/evidence/CROSS-ARCH.md).
 
-## Two implementations, one set of bits
+### Two implementations, one set of bits
 
 | | `core/include/starboard/` | `ports/c/` |
 |---|---|---|
-| Language | **C++17**, header-only | **C99**, MISRA-oriented |
-| Flight class | Starlink-class (embedded Linux) | CubeSat / rad-hard MCU / NASA cFS |
-| Discipline | allocation-free, exception-free, recursion-free | + no VLAs, fixed arrays, explicit widths |
-| Verified | 21 conformance vectors, ASan/UBSan clean | reproduces the C++ transcript byte-for-byte |
+| Language | **C++17**, header-only | **C99**, MISRA C:2012-checked |
+| For | Linux-class flight computers, ground tools | CubeSats, rad-hard MCUs, NASA cFS, F′ |
+| Includes | the protocol + CDM binding | the protocol + CDM binding + flight layer + flock |
+| Verified | 20 conformance vectors, sanitizers | both transcripts byte-for-byte, 11 architectures, bare metal, fault injection, fuzzing, CBMC |
 
-```
-starboard-protocol/
-├── docs/
-│   ├── DESIGN.md          ★ The specification — rules, theorems, constants (normative)
-│   ├── PROTOCOL.md        Layer-2 wire format & optional handshake
-│   ├── REGISTRY.md        Offline trust: signed assertions, Merkle log, revocation
-│   ├── CONFORMANCE.md     What "Starboard Certified™" means, precisely
-│   ├── OPEN-PROBLEMS.md   Honest ledger of what SB/1 does not yet settle
-│   └── STRATEGY.md        Why open + why forking loses
-├── core/include/starboard/   C++17 reference (canon, propagator, Pc, rules, …)
-├── ports/c/               Independent MISRA-C99 port (cross-language proof)
-├── conformance/           Vectors SB-001…020 + pinned bit transcript (normative)
-│   └── validation/        Independent Pc reference (scipy) + scale demo
-├── examples/crossing_demo.cpp
-└── tools/bitcheck.sh      The 29-build bit-agreement matrix
-```
+### Why a fork can't quietly "improve" it
 
-## Trust, without trusting anyone
-
-Rules 1–2 consume claims a craft could fake ("I cannot maneuver", "I am
-crewed"). Starboard's answer is structural: **every unverified claim degrades
-toward physics**. An unverifiable craft is treated as debris — you avoid it;
-a spoofed tier clamps to default; and when nothing can be verified, the
-decision falls through to stern-cone and starboard geometry, which can only
-be "spoofed" by actually flying differently. Verification itself is fully
-offline: a signed capability assertion chains through a Merkle registry log
-to a root key carried on board (`docs/REGISTRY.md`) — verify-only crypto, no
-signing key ever flies. Even a *forged* verdict can only reallocate who
-burns fuel; it can never steer anyone into anything (Theorem 2).
-
-## Why a fork can't quietly "improve" it
-
-A give-way convention is valuable only if everyone computes the same answer —
-so the constants, the operation order, and the ruleset version are hashed
-into every conjunction id. A stack that tweaks *anything* normative no longer
-even **names** encounters consistently with the installed base, fails the
-conformance vectors, and forfeits the only property that made the thing
-worth running. Deviation is a bug, not a differentiator. The full argument:
+A give-way convention only works if everyone computes the same answer. So
+the constants, the operation order and the ruleset version are hashed into
+every encounter's id. A modified copy can't even *name* encounters
+consistently with everyone else, fails the conformance suite, and loses the
+one property that made it worth running. Full argument:
 [`docs/DESIGN.md` §11](docs/DESIGN.md) and [`docs/STRATEGY.md`](docs/STRATEGY.md).
 
-## Status — read this before depending on it
+## Documentation map
 
-This is a **v0.5 draft** specification and reference implementation, published
-to invite review, independent implementations, and adopters. The intellectual
-core — deterministic, covariance-aware, provably-agreeing give-way from a
-shared conjunction data message — is implemented, theorem-backed, and
-conformance-tested. It has **not** flown, and
-[`docs/OPEN-PROBLEMS.md`](docs/OPEN-PROBLEMS.md) is a frank list of what still
-gates a real deployment (perturbation fidelity beyond J2, CDM provenance in
-practice, registry operations, crypto audit, hardware validation).
+| You are… | Start with |
+|---|---|
+| Curious | this page, then `./build/starboard_crossing_demo` and `ports/c/murmuration` |
+| An engineer evaluating the design | [`docs/DESIGN.md`](docs/DESIGN.md), the normative spec |
+| Putting it on a spacecraft | [`docs/FLIGHT.md`](docs/FLIGHT.md) |
+| Checking the claims | [`docs/ASSURANCE.md`](docs/ASSURANCE.md) and [`docs/evidence/`](docs/evidence/) |
+| Implementing it yourself | [`docs/DESIGN.md`](docs/DESIGN.md) §3–§5, then [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md) |
+| Deciding whether to depend on it | [`docs/OPEN-PROBLEMS.md`](docs/OPEN-PROBLEMS.md) |
 
-If you implement from the spec and your bits disagree with the transcript —
+If you implement the spec and your bits disagree with the transcript,
 **that is the most valuable bug report this project can receive.** See
 [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Licensing
 
-Open core, honestly stated: the **specification** (`docs/`) is CC BY 4.0 —
-free to implement forever, because a convention only works if everyone can
-adopt it. The **reference code** is AGPL-3.0-or-later; proprietary flight or
-ground software can license it commercially instead
-([`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md)). Conformance +
-certification carry the `Starboard Certified™` mark. Outside code
-contributions need a CLA (see [`CONTRIBUTING.md`](CONTRIBUTING.md)) — that's
-what keeps the dual license possible.
+The **specification** (`docs/`) is CC BY 4.0: free to implement forever,
+because a convention only works if everyone can adopt it. The **reference
+code** is AGPL-3.0-or-later; proprietary flight or ground software can
+license it commercially instead ([`COMMERCIAL-LICENSE.md`](COMMERCIAL-LICENSE.md)).
+Conformance and certification carry the `Starboard Certified™` mark.
+
+## Citing Starboard
+
+If Starboard helps your research, please cite it. GitHub's **"Cite this
+repository"** button uses [`CITATION.cff`](CITATION.cff); machine-readable
+metadata is in [`codemeta.json`](codemeta.json).
+
+> James H (Tokeloshe). *Starboard: an open, deterministic give-way protocol
+> for satellite collision avoidance*, v0.6.0, 2026.
+> https://github.com/Tokeloshe/starboard-protocol
+
+**Topics:** space traffic management · satellite collision avoidance ·
+conjunction assessment · CCSDS conjunction data message · probability of
+collision · right of way · COLREGS · autonomous satellites ·
+mega-constellations · Starlink · flight software · MISRA C · NASA cFS ·
+CubeSat · formation flying · swarm coordination · space debris ·
+deterministic computing · IEEE 754 reproducibility
 
 ## ☕ Support Starboard
 
-This is an independent, one-person project: the spec, the math, both
-implementations, and the conformance suite. If it's useful to you — or you
-just want more open, rigorously-engineered space infrastructure to exist —
-you can fuel the next revision:
+This is an independent, one-person project: the spec, the maths, both
+implementations, the flight library and all of the evidence. If it's useful
+to you, or you just want more open, rigorously engineered space
+infrastructure to exist, you can fuel the next revision:
 
 <div align="center">
 
@@ -244,5 +307,5 @@ language of choice are equally appreciated ways to help.*
 ---
 
 <div align="center">
-<sub>⚓ <b>Starboard</b> — because the orbital road needs rules, and rules need bits that agree.</sub>
+<sub>⚓ <b>Starboard</b>: because the orbital road needs rules, and rules need bits that agree.</sub>
 </div>

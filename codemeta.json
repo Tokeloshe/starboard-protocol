@@ -1,0 +1,27 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "Starboard Protocol",
+  "alternateName": "Starboard — the Rules of the Orbital Road",
+  "description": "An open, deterministic give-way protocol for satellite collision avoidance. Two spacecraft from rival operators, with no communication, independently compute the bit-identical verdict about which one maneuvers, from a shared CCSDS Conjunction Data Message. Includes a C++17 reference, an independent MISRA-checked C99 flight library with built-in self-test, SEU-tolerant redundant evaluation and CCSDS telemetry, a flock layer for constellation-wide maneuver awareness, and evidence of bit-identical results across 11 CPU architectures and bare-metal Cortex-M microcontrollers, CBMC proofs and fuzzing.",
+  "version": "0.6.0",
+  "dateModified": "2026-10-25",
+  "license": ["https://spdx.org/licenses/AGPL-3.0-or-later", "https://spdx.org/licenses/CC-BY-4.0"],
+  "codeRepository": "https://github.com/Tokeloshe/starboard-protocol",
+  "issueTracker": "https://github.com/Tokeloshe/starboard-protocol/issues",
+  "programmingLanguage": ["C", "C++", "Python"],
+  "runtimePlatform": ["Linux", "bare-metal ARM Cortex-M", "NASA cFS", "F Prime"],
+  "operatingSystem": ["Linux", "none (bare metal)"],
+  "applicationCategory": "Aerospace; Space Traffic Management; Flight Software",
+  "developmentStatus": "active",
+  "author": [{"@type": "Person", "name": "James H", "alternateName": "Tokeloshe"}],
+  "keywords": [
+    "space traffic management", "satellite collision avoidance",
+    "conjunction assessment", "CCSDS conjunction data message",
+    "probability of collision", "right of way", "COLREGS",
+    "autonomous satellites", "mega-constellations", "Starlink",
+    "flight software", "MISRA C", "deterministic computing",
+    "IEEE 754 reproducibility", "orbital mechanics", "Clohessy-Wiltshire",
+    "formation flying", "swarm coordination", "space debris", "CubeSat"
+  ]
+}

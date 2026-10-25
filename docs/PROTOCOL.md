@@ -1,6 +1,6 @@
 # Starboard — Wire Protocol (Layer 2 handshake)
 
-**Protocol v0.2 (draft) · for ruleset SB/1 (`RULESET_ID 0x53420001`)**
+**Protocol v0.3 (draft) · for ruleset SB/1 (`RULESET_ID 0x53420001`)**
 
 *The handshake is **optional** — Layers 0/1 are correct with no
 communication (DESIGN.md Theorem 1). This layer confirms, cross-checks, and
@@ -112,6 +112,72 @@ ASSERTED trust. A forged INTENT cannot redirect anyone: the receiver acts
 on its own verdict regardless (§3.1), so the worst a forger achieves is a
 logged dispute under someone else's identity — which the signature
 requirement then removes.
+
+## 6. Layer 4 — the flock: MANEUVER NOTICE
+
+Layer 2 is a conversation between the two craft of one encounter. Layer 4
+is a **broadcast to everyone**: when a craft commits to a give-way burn it
+announces the burn, its post-burn trajectory and its return, so that every
+craft in the constellation shares one picture of who is moving
+(DESIGN.md §7.7). Notices are relayed hop by hop; the flock **warns, it
+never decides**.
+
+### 6.1 Gossip rules
+
+* A receiver decodes the frame (CRC-32, format, ruleset, finite and physical
+  values, causal epoch order) and rejects anything else silently (counted).
+* It ignores its own notices echoed back.
+* Identity of a notice is (origin, conjunction id); a higher `seq` replaces a
+  lower one, and an equal or lower `seq` is a duplicate. **Duplicates are
+  never relayed.** That alone bounds the traffic: each craft relays each
+  notice at most once.
+* A NEW or UPDATED notice with `hops > 0` is relayed with `hops − 1`. The
+  originator sets `hops = 16` by default, enough for the diameter of a
+  realistic inter-satellite-link mesh.
+* The ledger is bounded (64 entries in the reference). A full ledger
+  rejects new origins until entries expire, which happens once their return
+  has completed (plus a retention margin).
+* Ledger agreement is checkable: `sb_flock_digest` is an order-independent
+  digest of the ledger content, excluding hop counts.
+
+### 6.2 Wire format (204 bytes, little-endian, packed)
+
+| Offset | Field | Size |
+|---|---|---|
+| 0 | magic `"SBFN"` | 4 |
+| 4 | version (= 1) | 1 |
+| 5 | flags (reserved, 0) | 1 |
+| 6 | hops remaining | 1 |
+| 7 | reserved (0) | 1 |
+| 8 | ruleset_id | 4 |
+| 12 | origin id (the maneuvering craft) | 12 |
+| 24 | seq (origin's notice counter) | 4 |
+| 28 | conjunction id | 8 |
+| 36 | counterpart id (what it avoids) | 12 |
+| 48 | tca_epoch_ms (GPS) | 8 |
+| 56 | burn_epoch_ms (GPS) | 8 |
+| 64 | post-burn position, ECI (m, f64×3) | 24 |
+| 88 | post-burn velocity, ECI (m/s, f64×3) | 24 |
+| 112 | burn Δv, ECI (m/s, f64×3) | 24 |
+| 136 | mirror-burn epoch (GPS ms) | 8 |
+| 144 | mirror-burn Δv, origin's Hill frame (f64×3) | 24 |
+| 168 | final-burn epoch (GPS ms) | 8 |
+| 176 | final-burn Δv, origin's Hill frame (f64×3) | 24 |
+| 200 | CRC-32 (IEEE 802.3) over bytes 0–199 **with byte 6 zeroed** | 4 |
+
+The hop byte is excluded from the CRC because relays decrement it. The CRC
+protects against corruption, not forgery. A notice MAY be authenticated
+like any Layer-2 message (§5). An unauthenticated notice is processed at
+ASSERTED trust, which costs nothing because notices only ever warn.
+
+### 6.3 Why a forged notice is harmless
+
+A notice can cause re-checks, alerts and requests for fresh CDMs. It cannot
+cause a burn, change a verdict or suppress an alert, because verdicts come
+from the shared CDM (DESIGN.md §3.3). And for every craft holding that CDM,
+the honest notice is *predictable*: the give-way plan is a pure function of
+shared data, so a receiver can recompute the mover's notice and compare it
+bit for bit.
 
 ## Appendix A — fixed binary layout (flight profile)
 

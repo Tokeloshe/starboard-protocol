@@ -47,6 +47,20 @@ catch. Maneuver quantities (Δv vectors, return plans) are checked to 10⁻⁹
 relative tolerance — they are single-craft outputs, not cross-craft
 agreements, so tolerance is sufficient there.
 
+**Extended transcript (suite v2, informative).** `conformance/ext_bits.cpp`
+and `ports/c/ext_bits.c` emit `conformance/expected_bits_ext.txt`: CW
+maneuver plans and both returns (2 048 encounters), multi-body windows (512),
+the broad-phase candidate set, exact decimal ingest, and the CDM binding over
+400 generated CDMs (a quarter deliberately malformed: both implementations
+must reject the same ones for the same reason). Its scenarios use only
+`+ − × ÷ √`, so it is also a clean cross-architecture probe. It is
+informative within SB/1; a future ruleset may promote it.
+
+**Platform conformance (MUST for flight).** On the target hardware, the
+flight self-test (`sbctl selftest`, `docs/FLIGHT.md` §5.1) MUST pass all
+eleven known-answer tests. A certification engagement runs it on the
+candidate's flight unit, not only on a workstation build.
+
 ### SB-C3 — Closed-loop conformance (SHOULD)
 
 A scenario-level replay: the candidate flies the demo timeline (screen →

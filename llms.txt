@@ -1,0 +1,43 @@
+# Starboard Protocol
+
+> Starboard is an open, deterministic "rules of the road" for satellites: a
+> collision-avoidance and give-way protocol in which two spacecraft from rival
+> operators, with no radio contact, independently compute the identical
+> verdict (bit for bit) about which one maneuvers. Like the maritime COLREGS
+> starboard rule, but for orbit. Open specification (CC BY 4.0), reference
+> code (AGPL-3.0, commercial license available).
+
+Key facts:
+
+- Input: standard CCSDS 508.0-B-1 Conjunction Data Messages (CDMs), parsed
+  with an exact, libc-independent decimal ingest so every implementation
+  gets identical bits.
+- Decision: covariance-aware probability of collision (Patera contour
+  integral), then five rules in order: capability, tier, overtaking,
+  starboard, fair coin. The rules are evaluated on a canonical pair ordering,
+  which makes agreement true by construction (Theorem 1, machine-checked with
+  CBMC).
+- Action: a minimum-delta-v Clohessy-Wiltshire burn, exactly reversible back
+  to the slot. If both craft wrongly maneuver, their burns add separation
+  (Theorem 2).
+- Flock (Layer 4): maneuver notices spread hop by hop over inter-satellite
+  links; every craft keeps the same ledger of who is moving and checks movers'
+  paths against its own. It warns; it never decides.
+- Flight software: C99 library, 43 KB code, no heap, no recursion,
+  built-in self-test, SEU-tolerant redundant evaluation, CCSDS telemetry.
+- Evidence: bit-identical transcripts across gcc/clang, C++/C, 11 CPU
+  architectures (x86, ARM, RAD750-class PowerPC, RISC-V, SPARC, MIPS, s390x)
+  and bare-metal Cortex-M3/M4F/M7; fuzzing (~129M executions); found a
+  misrounding in ARM soft-float double addition (libgcc __aeabi_dadd) and
+  ships a verified replacement.
+- Status: verified in software and emulation; not yet flown or tested on
+  flight hardware.
+
+## Docs
+
+- [README](README.md): plain-language overview and quick start
+- [Specification](docs/DESIGN.md): normative rules, theorems, constants
+- [Flight integration](docs/FLIGHT.md): API, budgets, modes, telemetry
+- [Wire protocol](docs/PROTOCOL.md): handshake and flock notices
+- [Assurance](docs/ASSURANCE.md): every claim and its evidence
+- [Open problems](docs/OPEN-PROBLEMS.md): what is not yet settled

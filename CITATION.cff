@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+message: >-
+  If you use Starboard — the specification, the reference implementations,
+  the conformance suite or the evidence — please cite it as below.
+type: software
+title: "Starboard: an open, deterministic give-way protocol for satellite collision avoidance"
+abstract: >-
+  Starboard is an open "rules of the road" for satellites: a deterministic
+  collision-avoidance and give-way protocol in which two spacecraft from rival
+  operators, with no radio contact, independently compute the identical
+  verdict — down to the last bit — about which one maneuvers. It ingests
+  standard CCSDS Conjunction Data Messages (CDMs), computes a covariance-aware
+  probability of collision (Patera contour integral), applies five
+  COLREGS-inspired rules (capability, tier, overtaking, starboard, fair coin)
+  on a canonical pair ordering, and plans a minimum-delta-v Clohessy-Wiltshire
+  burn that is exactly reversible back to the slot. A flock layer spreads
+  maneuver notices hop by hop so a whole constellation shares one picture of
+  who is moving. The repository provides a C++17 reference, an independent
+  MISRA-checked C99 flight library (43 KB, no heap, no recursion) with
+  built-in self-test, SEU-tolerant redundant evaluation and CCSDS telemetry,
+  and the evidence: bit-identical transcripts across compilers, languages and
+  11 CPU architectures (x86, ARM, RAD750-class PowerPC, RISC-V, SPARC, MIPS,
+  s390x) and bare-metal Cortex-M microcontrollers, CBMC proofs of the
+  agreement theorem, Wycheproof-validated signature verification, and
+  fuzzing.
+authors:
+  - name: "James H"
+    alias: Tokeloshe
+repository-code: "https://github.com/Tokeloshe/starboard-protocol"
+url: "https://github.com/Tokeloshe/starboard-protocol"
+license: AGPL-3.0-or-later
+version: 0.6.0
+date-released: "2026-10-25"
+keywords:
+  - space traffic management
+  - satellite collision avoidance
+  - conjunction assessment
+  - conjunction data message
+  - CCSDS CDM
+  - probability of collision
+  - right of way
+  - COLREGS
+  - autonomous satellites
+  - mega-constellations
+  - Starlink
+  - flight software
+  - MISRA C
+  - deterministic computing
+  - bit-exact reproducibility
+  - IEEE 754
+  - orbital mechanics
+  - J2 perturbation
+  - Clohessy-Wiltshire
+  - formation flying
+  - swarm coordination
+  - space sustainability
+  - space debris
+  - NASA cFS
+  - CubeSat

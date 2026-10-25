@@ -10,6 +10,81 @@ begins at publication.
 
 ---
 
+## v0.6.0 — "flight edition"
+
+From a rigorous reference to software a spacecraft team can integrate and
+test. **No pinned bit of SB/1 changed**: the v1 transcript and every SB-C2
+anchor are untouched (`RULESET_ID` unchanged). All additions are new layers,
+new input paths, or bit-neutral hardening.
+
+### Real-world input: the CDM binding (SPEC §3.3a)
+- CCSDS 508.0-B-1 **Conjunction Data Message** ingest, in two independent
+  implementations (`ports/c/cdm.c`, `core/include/starboard/cdm.hpp`)
+  cross-checked bit for bit.
+- **Exact decimal ingest**: ≤ 15 significant digits and |e| ≤ 22 make one
+  IEEE operation correctly rounded; no `strtod`. Fuzzed against glibc over
+  119 M inputs.
+- Pinned frames (ITRF via the frozen-Earth rotation at TCA), GPS epochs with
+  a pinned leap table, RTN → inertial covariance in pinned order.
+- **TCA anchoring**: back-propagate 512 s and search forward, so the
+  agreed encounter geometry is the provider's high-fidelity TCA geometry.
+- `sbctl`: decide any CDM from the ground with the flight library itself
+  (`--json` for pipelines). Example CDMs in `examples/cdm/`.
+
+### The flight layer (`docs/FLIGHT.md`)
+- One static context, C API, no heap or OS: modes SAFE / ADVISORY (shadow) /
+  AUTONOMOUS; a bounded encounter table with rolling-CDM updates.
+- **Built-in self-test**: eleven known-answer tests at boot and on command;
+  any failure latches SAFE.
+- **SEU tolerance**: every decision computed twice and compared field by
+  field (exact, because the computation is deterministic), 2-of-3 vote on
+  mismatch, CRC-protected stored inputs. Verified by fault injection.
+- **CCSDS Space Packet** telemetry: housekeeping, decision events, maneuver
+  requests, with a CRC-16 trailer.
+- Fits a CubeSat MCU: 43.2 KB code, 24.8 KB RAM, 6.4 KB worst-case stack
+  (static bound), recursion-free (proved).
+
+### Layer 4: the flock (SPEC §7.7, PROTOCOL §6)
+- 204-byte **maneuver notices**, hop-by-hop gossip with de-duplication, a
+  bounded **flock ledger** with an order-independent digest, and the
+  **flock check** of each mover's path against one's own. It warns and never
+  decides; notices are predictable from shared data ("silent flock").
+- `examples/murmuration.c`: a 72-satellite shell converges in 9 hops; an
+  8-craft formation detects that a lone give-way burn would sweep through
+  its neighbours, and screens candidate plans, including turning in unison.
+
+### C99 port: now the complete flight library
+- Ported maneuver (CW, give-way, both returns), multi-body cascade,
+  broad-phase (non-recursive heapsort), Ed25519 verification with portable
+  32-bit limbs (no `__int128`), and the full registry trust pipeline.
+- A second, informative **v2 transcript** pins all of it cross-language.
+
+### Evidence (`docs/ASSURANCE.md`)
+- **11 CPU architectures** bit-identical under QEMU (x86-32/64, AArch64,
+  ARMv7, ARMv5 soft-float, RAD750-class PowerPC, PPC64LE, RISC-V, SPARC64,
+  MIPS, s390x); **bare-metal Cortex-M3/M4F/M7** bit-identical.
+- Non-conformance controls (x87, FMA) are refused by the self-test.
+- **Finding:** ARM soft-float double addition (libgcc `__aeabi_dadd`)
+  misrounds at an exponent gap of exactly 33, which would desynchronize
+  FPU-less ARM satellites. Detected by the self-test; fixed by
+  `ports/c/softdouble.c` (49 M cases verified against hardware).
+- **CBMC proofs**: Theorem 1 decision layer (all predicate functions),
+  conjunction-id lemma, memory safety of notice and CDM parsing.
+- **Fuzzing** (libFuzzer + ASan/UBSan, ~129 M executions), including
+  C-vs-C++ differential fuzzing that found an identity-truncation bug.
+- **MISRA C:2012** record with documented deviations (`tools/misra.sh`).
+- **CI** (`.github/workflows/ci.yml`) re-runs all of it on every push.
+
+### Fixes (bit-neutral for valid input)
+- A NaN screening arc no longer loops forever (a watchdog reset in flight).
+- `propagate` guards non-finite and > 2²⁰ s steps (was UB / hours-long loop).
+- Non-finite covariance → Pc := 1 instead of a NaN that disabled the gate.
+- Embedded NUL in a CDM identity can no longer truncate it to a valid id.
+
+### Discoverability
+- `CITATION.cff`, `codemeta.json`, `llms.txt`; README rewritten for a
+  general audience.
+
 ## v0.5.1 (unreleased draft) — "pre-publication audit"
 
 A full-code review before the first public release; every finding fixed,

@@ -7,7 +7,9 @@ Reading order depends on who you are:
 | **Curious** what this is | the [root README](../README.md), then the demo (`examples/`) |
 | **An engineer** evaluating the design | [`DESIGN.md`](DESIGN.md) — the normative specification: the rules, the four theorems, every pinned constant. Written to be verified by inspection. |
 | **Implementing** Starboard | [`DESIGN.md`](DESIGN.md) §3–§5 (canon, screening, rules), then [`CONFORMANCE.md`](CONFORMANCE.md) — your implementation is correct when it reproduces the vectors and the bit transcript, and *not before* |
-| **Integrating comms** | [`PROTOCOL.md`](PROTOCOL.md) — the optional Layer-2 handshake wire format (comms confirm; they never decide) |
+| **Putting it on a spacecraft** | [`FLIGHT.md`](FLIGHT.md) — the C99 flight library: API, memory/stack budget, modes, self-test, SEU handling, CCSDS telemetry, the flock, concept of operations |
+| **Checking the evidence** | [`ASSURANCE.md`](ASSURANCE.md) — every claim, its evidence, and the command that reproduces it; details in [`evidence/`](evidence/) |
+| **Integrating comms** | [`PROTOCOL.md`](PROTOCOL.md) — the optional Layer-2 handshake and the Layer-4 flock notice (comms confirm and warn; they never decide) |
 | **Thinking about trust/security** | [`REGISTRY.md`](REGISTRY.md) — signed capability assertions, the Merkle log, revocation, and the threat table |
 | **Deciding whether to depend on this** | [`OPEN-PROBLEMS.md`](OPEN-PROBLEMS.md) — the honest ledger of what SB/1 does *not* yet settle |
 | **Wondering about the business model** | [`STRATEGY.md`](STRATEGY.md) — why the spec is free, why forking loses, how the project sustains itself |

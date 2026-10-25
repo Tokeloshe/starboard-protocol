@@ -1,6 +1,6 @@
 # Starboard Specification — The Rules of the Orbital Road
 
-**Ruleset SB/1 · Specification v0.5.1 (draft) · `RULESET_ID = 0x53420001`**
+**Ruleset SB/1 · Specification v0.6 (draft) · `RULESET_ID = 0x53420001`**
 
 *Specification text © 2026 James H, licensed CC BY 4.0. The reference
 implementation in `core/` is dual-licensed AGPL-3.0 / commercial.*
@@ -46,6 +46,8 @@ ask "should I give way?"; the geometry answers it. Four axioms follow:
 ├──────────────────────────────────────────────────────────────────┤
 │ Layer 6  MANEUVER            min-Δv Hill-frame burn, reversible  │
 ├──────────────────────────────────────────────────────────────────┤
+│ Layer 4  THE FLOCK           maneuver notices, shared ledger     │
+├──────────────────────────────────────────────────────────────────┤
 │ Layer 3  RETURN TO SLOT      mirror + phase; the flock settles   │
 ├──────────────────────────────────────────────────────────────────┤
 │ Layer 2  HANDSHAKE           optional confirmation (PROTOCOL.md) │
@@ -58,8 +60,8 @@ ask "should I give way?"; the geometry answers it. Four axioms follow:
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-Layers C, 0, 1, 6, 7 require **no communication**. Layers 2–3 are
-enhancements. (Layer numbers are stable names, not a contiguous stack.)
+Layers C, 0, 1, 6, 7 require **no communication**. Layers 2–4 are
+enhancements: they confirm, inform and warn, and never decide. (Layer numbers are stable names, not a contiguous stack.)
 
 ## 3. Layer C — canonical conventions
 
@@ -110,6 +112,51 @@ Layer 1 additionally consumes the two registry descriptors (tier,
 capability, trust) and the TCA epoch derived from the CDM. The reference
 epoch also bounds the propagation arc (§4.2), which is what keeps the shared
 extrapolation physically valid.
+
+### 3.3a The CDM binding (normative)
+
+The shared input of §3.3 arrives in practice as a **CCSDS 508.0-B-1
+Conjunction Data Message** in KVN text. Two craft that receive the same CDM
+bytes MUST derive bit-identical shared inputs. The binding is pinned
+(`ports/c/cdm.c` and `core/include/starboard/cdm.hpp`, two independent
+implementations cross-checked by the v2 transcript and a differential
+fuzzer):
+
+1. **Identity.** `INTERNATIONAL_DESIGNATOR` (the COSPAR id of §3.2). If the
+   CDM gives `UNKNOWN`, the identity is `CAT` followed by
+   `OBJECT_DESIGNATOR`. Only `[A-Z0-9-]` is accepted, checked over every byte
+   of the field. Both objects mapping to one identity is a rejection.
+2. **Exact decimal ingest.** A numeric field is accepted only with at most
+   15 significant digits and, after folding in the unit's power of ten
+   (km → m is +3), a decimal exponent |e| ≤ 22. The mantissa M < 10¹⁵ < 2⁵³
+   and 10^|e| ≤ 10²² are then exact binary64 values, and **one** IEEE
+   multiply or divide yields the correctly rounded value (Clinger's fast
+   path). `strtod` MUST NOT be used: libc decimal conversion is not uniformly
+   correctly rounded. Out-of-grammar fields are rejected, not approximated.
+3. **Epoch.** `TCA` in `YYYY-MM-DDThh:mm:ss[.f]` or `YYYY-DDDThh:mm:ss[.f]`,
+   fractional seconds rounded half-to-even to the millisecond by exact digit
+   comparison, then converted to GPS milliseconds by integer civil-calendar
+   arithmetic and the pinned GPS−UTC table (18 s since 2017-01-01). A new
+   IERS leap second is a binding revision.
+4. **Frames.** GCRF / ICRF / EME2000 / TEME pass through. ITRF (any
+   realization) maps by the **frozen-Earth rotation at TCA**:
+   r_i = r_f, v_i = v_f + ω×r_f with ω = (0, 0, 7.292115×10⁻⁵ rad/s). This
+   needs no Earth-orientation data, and its z-axis is the true pole that J2
+   is symmetric about.
+5. **Covariance.** The position block (`CR_R … CN_N`, m²) is rotated from RTN
+   to inertial as C = Bᵀ K B, with B the Hill basis of the canonical state
+   (§3.1), pinned expansion order (M = K B, then Bᵀ M; inner sums
+   ascending), then quantized.
+6. **TCA anchoring.** Screening back-propagates both TCA states by
+   `CDM_BACKPROP_S = 512 s` with the canonical propagator and runs the §4.2a
+   search forward over the full arc. The canonical integrator round-trips to
+   well under a millimetre, so the encounter geometry the craft agree on is
+   the **provider's** high-fidelity TCA geometry. The J2-only canonical
+   model only *locates* the canonical TCA, which mitigates the
+   dynamics-fidelity limitation of §4.2 for CDM input.
+7. **Hard body.** `HBR` (m) if present, else 2 × `DEFAULT_HBR_M`.
+
+The binding changes no pinned bit of SB/1: it defines a new input path.
 
 ### 3.4 The quantization lattice
 
@@ -162,6 +209,18 @@ Flight software SHOULD run it at boot and refuse to produce verdicts on
 failure; the conformance runner and the C99 transcript binary refuse to
 start if it fails.
 
+*Platform conformance, checked at boot (normative for flight).* The
+contraction check above is one of eleven known-answer tests in the flight
+self-test (`docs/FLIGHT.md` §5.1). The others are: an excess-precision probe
+(x87-style double rounding), the full 12 290-value transcendental sweep, six
+IEEE-754 rounding probes at exponent gaps 31–34, and end-to-end known answers
+for the J2 search, the rule chain, the maneuver planner, SHA-512, Ed25519,
+the CDM binding and a CRC of the canonical constants. A craft MUST NOT
+produce verdicts on a platform that fails any of them. The cross-architecture
+campaign found such a platform: ARM soft-float double addition (libgcc
+`__aeabi_dadd`) misrounds at an exponent gap of exactly 33. The reference
+ships a correctly-rounded replacement (`ports/c/softdouble.c`).
+
 ### 3.6 Canonical constants
 
 All conformant implementations MUST use exactly these values
@@ -195,6 +254,24 @@ All conformant implementations MUST use exactly these values
 These are not tuning parameters. They are part of the protocol's identity:
 §11 explains why changing any of them removes an implementation from the
 network.
+
+### 3.7 Input domain and fail-safe handling (normative)
+
+SB/1 is defined on finite inputs inside a physical domain. Implementations
+MUST validate shared inputs before screening, and MUST report an invalid
+input as an **input fault**, never as "no conjunction": a fault that reads as
+"all clear" is the one failure mode a collision-avoidance system cannot
+have. The flight layer rejects non-finite values, |r| ∉ [6 000, 50 000] km,
+|v| ∉ [1, 20] km/s, negative variances and variances above 10¹⁴ m². The core
+is additionally hardened so a bad input cannot hang or misbehave, and every
+one of these changes is bit-neutral for valid inputs:
+
+* `screen_orbits` rejects an arc with `!(arc > 0)`, so a NaN arc returns
+  instead of looping forever;
+* `propagate` returns its input unchanged for |dt| > `PROP_DT_MAX_S = 2²⁰ s`
+  or a non-finite dt, instead of undefined behaviour in the step-count cast
+  or an hours-long loop;
+* Starboard-Pc applies **non-finite repair** (§4.4).
 
 ## 4. Layer 0 — screening and Starboard-Pc
 
@@ -350,6 +427,11 @@ correlation MUST be dropped: `c := 0`. Without this repair the Cholesky in
 compares false against `PC_ACTIONABLE` — a bad covariance would silently
 *disable* the actionability gate. The determinant floor `det ≥ VAR_FLOOR²`
 applies after the repair.
+
+**Non-finite repair (normative).** If the projected `a`, `b` or `c` is NaN
+or infinite, `Pc := 1`. A NaN Pc compares false against `PC_ACTIONABLE`, the
+same gate-disabling failure PSD repair closes. Both craft hold the same bytes,
+so both take this branch: the repair is fail-safe and symmetric.
 
 ### 4.5 Starboard-Pc (a defined quantity)
 
@@ -765,6 +847,39 @@ all participants compute the same sequence of verdicts and locks. ∎
 Fairness across windows follows from §5.7 — locks reshuffle per window
 because the coin and the TCA buckets do.
 
+### 7.7 Layer 4 — the flock *(informative; the wire format is PROTOCOL.md §6)*
+
+Starlings in a murmuration never hold a meeting. Each bird watches its
+neighbours, and a turn ripples through the flock. Layer 4 gives a
+constellation the same collective awareness:
+
+1. A craft that commits to a give-way burn emits a **maneuver notice**: the
+   burn, its post-burn state, and both return burns.
+2. Notices spread **hop by hop** (gossip: each craft relays each notice
+   once, with a hop limit). They reach the constellation in "diameter" hops.
+3. Every craft folds notices into a **flock ledger**, de-duplicated by
+   (origin, sequence). After the ripple every ledger holds the same set: an
+   order-independent digest proves it.
+4. Each craft runs the **flock check**: it screens every mover's announced
+   path against its own over the mover's whole maneuver window and raises a
+   FLOCK ALERT if the mover would pass within R_SAFE.
+
+Layer 4 inherits Layer 2's posture: **it warns, it never decides.** An alert
+requests a fresh CDM and notifies operators; verdicts still come from shared
+data (§3.3). Notices are redundant by construction. The give-way burn is a
+pure function of the shared CDM, so every craft holding that CDM already
+computes the mover's notice bit for bit ("the silent flock"). A forged
+notice can therefore cost at most a re-check, never a collision.
+
+In a dense formation the flock catches what pairwise rules cannot see. A
+give-way burn's drift and return can sweep through the formation-mates'
+slots, and exactly the affected members raise alerts. Because every member
+holds the same CDM and ledger, a cluster can screen candidate schedules
+(burn leads; a solo burn, or the whole formation turning in unison) against
+the flock and the threat, and every member arrives at the same choice
+(`examples/murmuration.c`). Formation-follow is an intra-operator policy;
+between operators the flock only warns.
+
 ## 8. The adversarial model
 
 ### 8.1 Attack surface
@@ -948,6 +1063,17 @@ no-FP-contraction requirement in-source (`#pragma STDC FP_CONTRACT OFF` plus
 the build flag, §3.5) so bit-agreement no longer depends on a remembered
 compiler option. Draft revisions before first publication share `RULESET_ID`;
 the id-bump discipline (§11, §9.3) starts at publication.
+
+**v0.5.1 → v0.6 (flight edition):** additions only; **no pinned bit of SB/1
+changed.** The CDM binding (§3.3a: exact decimal ingest, pinned frames and
+epochs, TCA anchoring); the input domain and fail-safe rules (§3.7); non-finite
+repair in Starboard-Pc (§4.4); hang and UB guards in the screener and
+propagator (both bit-neutral for valid input); the flight self-test extended
+to eleven known-answer tests (§3.5), prompted by a misrounding ARM soft-float
+routine found by the cross-architecture campaign; and Layer 4, the flock
+(§7.7). The C99 port gained the maneuver, multi-body, broad-phase, Ed25519 and
+registry layers. A second, informative transcript (v2) pins them
+cross-language.
 
 **v0.5 → v0.5.1 (pre-publication audit):** a full-code review before the
 first public release, all fixes landed together. Verdict-path semantics:
