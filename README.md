@@ -34,7 +34,7 @@ answer.
 
 ## The idea in one minute
 
-**The problem.** There are about 10,000 working satellites in orbit today,
+**The problem.** There are about 15,000 working satellites in orbit today,
 and plans for over 100,000. When two satellites from *different* companies
 are about to pass too close, operators still sort it out by **email**. That
 doesn't scale, and it fails when someone is slow, unreachable, or the link

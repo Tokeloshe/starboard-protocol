@@ -27,8 +27,8 @@ begins at publication.
 - `site/index.html`: the launch page. The same film with pause, scrub, half
   speed and chapter jumps, followed by the write-up (the problem, the rule
   chain, bit-identical arithmetic, the ARM soft-float finding with its
-  caveats, the threat model, the flock, what is not done yet, how it was
-  built) and a social preview image (`site/og.png`). Built from
+  caveats, the threat model, the flock, what is not done yet) and a social
+  preview image (`site/og.png`). Built from
   `tools/animation/page.html` and published to GitHub Pages by
   `.github/workflows/pages.yml`.
 - `tools/animation/make_animation.py` regenerates both; it reads the flock

@@ -166,10 +166,7 @@ footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid 
 </ul>
 <p>The full, unflattering list is <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/OPEN-PROBLEMS.md">OPEN-PROBLEMS.md</a>.</p>
 
-<h2><span class="n">09</span>How it was built</h2>
-<p>Starboard is a one-person project, and most of its code and documentation was written with Claude, Anthropic's AI model, which is why it appears as a contributor on GitHub. That is also why the repository is built so you don't have to trust its prose: <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/ASSURANCE.md">ASSURANCE.md</a> lists every claim with the command that reproduces it, and CI reruns those commands on every push. If something on this page does not reproduce, that is a bug and I want the report.</p>
-
-<h2><span class="n">10</span>Try it in 60 seconds</h2>
+<h2><span class="n">09</span>Try it in 60 seconds</h2>
 <pre><span class="k">$ git clone https://github.com/Tokeloshe/starboard-protocol &amp;&amp; cd starboard-protocol</span>
 <span class="k">$ cmake -B build &amp;&amp; cmake --build build &amp;&amp; ./build/starboard_crossing_demo</span>
    Pc bits  ACME 0x3F5117B3E9975E2E | ORBX 0x3F5117B3E9975E2E  <span class="m">IDENTICAL [ok]</span>
@@ -182,7 +179,7 @@ footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid 
    flock ledgers: <span class="m">ALL 71 IDENTICAL</span> (digest 1E3AC8C816631BCF on every satellite)</pre>
 <p>The C99 flight library is 43 KB of code and 25 KB of RAM, with no heap and no recursion, MISRA C:2012-checked, and fuzzed with about 129 million hostile inputs. It reads CCSDS CDMs, speaks CCSDS telemetry, and integrates with NASA cFS, F′ or bare metal. A header-only C++17 reference implementation produces the same bits.</p>
 
-<h2><span class="n">11</span>What would help</h2>
+<h2><span class="n">10</span>What would help</h2>
 <ul>
 <li><strong>Conjunction assessment people:</strong> where does the rule chain break against how you actually decide today?</li>
 <li><strong>Flight software people:</strong> what would it take to fly this in shadow mode on your bus?</li>
