@@ -199,6 +199,21 @@ def anim(points, prop, cls=None, ease="linear"):
     return name
 
 
+def combos(svg):
+    """An element with two animation classes needs one rule naming both;
+    otherwise the later class's animation replaces the earlier one."""
+    seen, rules = set(), []
+    for m in re.finditer(r'class="((?:a\d+ )+a\d+)"', svg):
+        names = m.group(1).split()
+        key = " ".join(names)
+        if key in seen:
+            continue
+        seen.add(key)
+        rules.append("." + ".".join(names) + "{animation:" +
+                     ",".join(f"{n} {f(T)}s linear infinite" for n in names) + "}")
+    return "".join(rules)
+
+
 def fade(t_in, t_out, d=0.5, peak=1.0, d_out=None):
     d_out = d if d_out is None else d_out
     return anim([(t_in, 0), (t_in + d, peak), (t_out - d_out, peak), (t_out, 0)],
@@ -1260,7 +1275,7 @@ def build():
 <clipPath id="frame"><rect width="1200" height="675" rx="14"/></clipPath>
 </defs>'''
 
-    style = ("<style>" + "".join(CSS) +
+    style = ("<style>" + "".join(CSS) + combos("".join(out)) +
              "@media (prefers-reduced-motion:reduce){*{animation-duration:" + f(T) + "s!important}}"
              "</style>")
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 {W} {H}" width="{W}" height="{H}" '
