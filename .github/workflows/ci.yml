@@ -60,21 +60,33 @@ jobs:
   cross-architecture:
     name: 11 CPU architectures under QEMU (+ non-conformance controls)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
+      # The cross toolchains are ~1 GB of packages; when the runner's Ubuntu
+      # mirror is slow, downloading them alone can exceed the job timeout.
+      # Cache the .deb files so only the first run depends on the mirror.
+      - uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-crossarch-ubuntu24.04-v1
       - name: toolchains
+        timeout-minutes: 30
         run: |
+          mkdir -p ~/apt-cache/partial
           sudo apt-get update -q
-          sudo apt-get install -y -q qemu-user gcc-i686-linux-gnu \
+          sudo apt-get install -y -q -o Dir::Cache::Archives="$HOME/apt-cache" \
+            -o Acquire::Retries=3 qemu-user gcc-i686-linux-gnu \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf gcc-arm-linux-gnueabi \
             gcc-powerpc-linux-gnu gcc-powerpc64le-linux-gnu gcc-riscv64-linux-gnu \
             gcc-sparc64-linux-gnu gcc-mips-linux-gnu gcc-s390x-linux-gnu
+          sudo chown -R "$USER" ~/apt-cache
       - name: campaign
+        timeout-minutes: 30
         run: tools/crossarch.sh --markdown | tee crossarch.txt
       - name: summary
         if: always()
-        run: sed -n '/^| Target/,$p' crossarch.txt >> "$GITHUB_STEP_SUMMARY"
+        run: sed -n '/^| Target/,$p' crossarch.txt >> "$GITHUB_STEP_SUMMARY" || true
 
   bare-metal:
     name: bare-metal Cortex-M3 / M4F / M7 (no OS, QEMU MPS2)
@@ -82,15 +94,24 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-baremetal-ubuntu24.04-v1
       - name: toolchain
+        timeout-minutes: 30
         run: |
+          mkdir -p ~/apt-cache/partial
           sudo apt-get update -q
-          sudo apt-get install -y -q gcc-arm-none-eabi libnewlib-arm-none-eabi qemu-system-arm
+          sudo apt-get install -y -q -o Dir::Cache::Archives="$HOME/apt-cache" \
+            -o Acquire::Retries=3 gcc-arm-none-eabi libnewlib-arm-none-eabi qemu-system-arm
+          sudo chown -R "$USER" ~/apt-cache
       - name: campaign
+        timeout-minutes: 30
         run: tools/baremetal.sh --markdown | tee baremetal.txt
       - name: summary
         if: always()
-        run: sed -n '/^| MCU/,$p' baremetal.txt >> "$GITHUB_STEP_SUMMARY"
+        run: sed -n '/^| MCU/,$p' baremetal.txt >> "$GITHUB_STEP_SUMMARY" || true
 
   formal:
     name: CBMC proofs (Theorem 1, conjunction id, ISL notice parser)
