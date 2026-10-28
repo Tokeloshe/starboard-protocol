@@ -1,6 +1,6 @@
 <div align="center">
 
-# ⚓ Starboard
+# 🛰️⚓ Starboard
 
 ### The Rules of the Orbital Road
 
