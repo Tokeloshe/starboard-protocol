@@ -20,6 +20,16 @@ answer.
 
 </div>
 
+<p align="center">
+  <a href="https://tokeloshe.github.io/starboard-protocol/">
+    <img src="docs/media/starboard-in-action.svg" width="100%"
+         alt="Animation: ACME-1 and ORBX-9 each receive the same conjunction warning, compute the same collision probability and verdict with no communication, ACME-1 gives way and returns to its slot, then a 72-satellite flock relays the maneuver notice hop by hop until every ledger is identical.">
+  </a>
+  <br>
+  <sub>Every number on screen comes from <code>starboard_crossing_demo</code> and <code>murmuration</code>.
+  <a href="https://tokeloshe.github.io/starboard-protocol/">Open the interactive player</a> to pause, scrub and jump between chapters.</sub>
+</p>
+
 ---
 
 ## The idea in one minute

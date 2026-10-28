@@ -10,6 +10,20 @@ begins at publication.
 
 ---
 
+## Unreleased
+
+### Animation and interactive player
+- `docs/media/starboard-in-action.svg`: a looping 48 s animation embedded at
+  the top of the README. Act one plays the crossing demo (shared CDM,
+  bit-identical Pc and verdict, min-Δv burn, 1280 m closest approach, return
+  to slot); act two plays the 72-satellite murmuration hop by hop, exactly in
+  the order the `murmuration` transcript reports. Pure SVG and CSS keyframes,
+  no script, so GitHub plays it inline.
+- `site/index.html`: the same film with pause, scrub, half speed and chapter
+  jumps, published to GitHub Pages by `.github/workflows/pages.yml`.
+- `tools/animation/make_animation.py` regenerates both; it reads the flock
+  spread live from `ports/c/murmuration` when that binary is built.
+
 ## v0.6.0 — "flight edition"
 
 From a rigorous reference to software a spacecraft team can integrate and
