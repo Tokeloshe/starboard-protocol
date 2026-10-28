@@ -24,8 +24,13 @@ begins at publication.
   `murmuration` raises three flock alerts, screens every plan (alone and in
   unison) and re-plans its dodge. Pure SVG and CSS keyframes, no script, so
   GitHub plays it inline.
-- `site/index.html`: the same film with pause, scrub, half speed and chapter
-  jumps, published to GitHub Pages by `.github/workflows/pages.yml`.
+- `site/index.html`: the launch page. The same film with pause, scrub, half
+  speed and chapter jumps, followed by the write-up (the problem, the rule
+  chain, bit-identical arithmetic, the ARM soft-float finding with its
+  caveats, the threat model, the flock, what is not done yet, how it was
+  built) and a social preview image (`site/og.png`). Built from
+  `tools/animation/page.html` and published to GitHub Pages by
+  `.github/workflows/pages.yml`.
 - `tools/animation/make_animation.py` regenerates both; it reads the flock
   spread, the formation alerts and the plan table live from
   `ports/c/murmuration` when that binary is built.

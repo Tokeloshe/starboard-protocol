@@ -3,19 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Starboard · The Rules of the Orbital Road</title>
-<meta name="description" content="An open, deterministic collision-avoidance protocol for satellites. Watch two rival satellites agree on who gives way with zero communication, then a 72-satellite flock learn about the maneuver.">
-<meta property="og:title" content="Starboard · The Rules of the Orbital Road">
+<title>Starboard · Rules of the road for satellites</title>
+<meta name="description" content="An open, deterministic give-way protocol for satellites. Two spacecraft from different operators, with no radio contact, each decide alone which one moves, and always get the same answer, bit for bit.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Starboard · Rules of the road for satellites">
 <meta property="og:description" content="Two satellites, no radio contact, one answer, bit for bit.">
+<meta property="og:url" content="https://tokeloshe.github.io/starboard-protocol/">
+<meta property="og:image" content="https://tokeloshe.github.io/starboard-protocol/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="675">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://tokeloshe.github.io/starboard-protocol/og.png">
 <style>
-:root{--bg:#04060c;--ink:#E9EEF7;--dim:#7C8AA5;--line:#1a2338;--amber:#FFB547;--cyan:#62D6FF;--mint:#7CF2C2}
+:root{--bg:#04060c;--ink:#E9EEF7;--body:#C9D3E3;--dim:#7C8AA5;--line:#1a2338;--panel:#070b16;--amber:#FFB547;--cyan:#62D6FF;--mint:#7CF2C2;--rose:#FF5D73}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
 a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+code{font:0.88em ui-monospace,"SF Mono",Menlo,Consolas,monospace;background:#0b1222;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#d6e0f0}
 .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
 header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
 .mark{letter-spacing:.42em;font-weight:600;font-size:13px}
 nav a{color:var(--dim);font-size:13px;margin-left:22px;letter-spacing:.06em}
+.hero{margin:28px 0 26px}
+h1{font-weight:300;font-size:clamp(30px,4.6vw,52px);line-height:1.12;letter-spacing:.01em;margin:0 0 12px}
+.sub{color:var(--dim);font-size:clamp(16px,1.6vw,19px);max-width:760px;margin:0}
+.byline{color:var(--dim);font-size:13px;letter-spacing:.06em;margin-top:14px}
 .stage{position:relative;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px var(--line)}
 .stage svg{display:block;width:100%;height:auto}
 .bar{display:flex;align-items:center;gap:14px;margin:14px 0 6px}
@@ -24,24 +36,48 @@ button:hover{border-color:var(--dim)}
 button.on{border-color:var(--amber);color:var(--amber)}
 input[type=range]{flex:1;accent-color:var(--amber);min-width:80px}
 .time{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--dim);width:92px;text-align:right}
-.chapters{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 40px}
+.chapters{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 20px}
 .chapters button{color:var(--dim)}
-h1{font-weight:300;font-size:clamp(28px,4vw,44px);letter-spacing:.02em;margin:56px 0 8px}
-.lede{color:var(--dim);max-width:720px;font-size:17px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:36px 0}
-.card{border:1px solid var(--line);border-radius:12px;padding:20px;background:#070b16}
-.card h3{margin:0 0 6px;font-size:13px;letter-spacing:.22em;font-weight:600}
-.card p{margin:0;color:var(--dim);font-size:14px}
-pre{background:#070b16;border:1px solid var(--line);border-radius:12px;padding:18px;overflow:auto;font:12.5px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c8d3e6}
-.k{color:var(--dim)}.a{color:var(--amber)}.c{color:var(--cyan)}.m{color:var(--mint)}
-footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid var(--line);margin-top:60px}
-@media (max-width:640px){nav{display:none}.time{width:70px}}
+article{max-width:720px;margin:56px auto 0;color:var(--body)}
+article h2{color:var(--ink);font-weight:500;font-size:24px;letter-spacing:.01em;margin:56px 0 10px}
+article h2 .n{color:var(--dim);font:500 12px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.2em;display:block;margin-bottom:6px}
+article p{margin:0 0 18px}
+article strong{color:var(--ink);font-weight:600}
+article ul,article ol{padding-left:22px;margin:0 0 18px}
+article li{margin:4px 0}
+.rules{list-style:none;padding:0;margin:8px 0 22px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.rules li{display:grid;grid-template-columns:56px 1fr;gap:14px;padding:12px 16px;margin:0;border-top:1px solid var(--line);background:var(--panel)}
+.rules li:first-child{border-top:0}
+.rules b{font:700 13px ui-monospace,Menlo,Consolas,monospace;color:var(--amber);letter-spacing:.06em;padding-top:2px}
+.rules span{color:var(--body)}
+pre{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;overflow:auto;font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#c8d3e6;margin:0 0 20px}
+.k{color:var(--dim)}.a{color:var(--amber)}.c{color:var(--cyan)}.m{color:var(--mint)}.r{color:var(--rose)}
+.note{border-left:3px solid var(--amber);background:var(--panel);border-radius:0 10px 10px 0;padding:14px 18px;margin:0 0 20px;color:var(--body);font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:8px 0 22px}
+.stat{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--panel)}
+.stat b{display:block;color:var(--ink);font-weight:300;font-size:26px;line-height:1.2}
+.stat span{color:var(--dim);font-size:13px}
+table{width:100%;border-collapse:collapse;margin:0 0 22px;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--dim);font-weight:500;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.cta{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 24px}
+.cta a{border:1px solid var(--line);border-radius:999px;padding:8px 16px;color:var(--ink);font-size:14px}
+.cta a.primary{border-color:var(--amber);color:var(--amber)}
+.cta a:hover{text-decoration:none;border-color:var(--dim)}
+footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid var(--line);margin-top:72px}
+@media (max-width:640px){nav{display:none}.time{width:70px}article h2{font-size:21px}.rules li{grid-template-columns:44px 1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header><div class="mark">STARBOARD</div>
-<nav><a href="https://github.com/Tokeloshe/starboard-protocol">GitHub</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/DESIGN.md">Specification</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/FLIGHT.md">Flight guide</a></nav></header>
+<nav><a href="https://github.com/Tokeloshe/starboard-protocol">GitHub</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/DESIGN.md">Specification</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/OPEN-PROBLEMS.md">Open problems</a></nav></header>
+
+<div class="hero">
+<h1>Rules of the road for satellites.</h1>
+<p class="sub">Two spacecraft from different operators, with no radio contact, each work out alone which one should move out of the way, and both always get the same answer, down to the last bit.</p>
+<div class="byline">James H · v0.6 · open spec, open code</div>
+</div>
 
 <div class="stage"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 675" role="img" id="film" aria-labelledby="sbTitle sbDesc"><title id="sbTitle">Starboard in action</title><desc id="sbDesc">Two satellites, ACME-1 and ORBX-9, receive the same conjunction warning, each compute Pc 0x3F5117B3E9975E2E and the same verdict with no communication; ACME-1 gives way with a 1.012 m/s burn, passes 1280.0 m clear and returns to its slot. Then a 72-satellite flock relays one maneuver notice hop by hop until all ledgers are identical. Finally a mega-constellation of crossing satellite trains flows in unison while conjunctions resolve across it, each pair reaching its verdict alone, and an 8-craft formation re-plans one member’s dodge so nobody else is endangered.</desc><defs>
 <radialGradient id="bg" cx="50%" cy="30%" r="80%"><stop offset="0" stop-color="#0B1426"/><stop offset=".6" stop-color="#060A14"/><stop offset="1" stop-color="#03050A"/></radialGradient>
@@ -89,29 +125,107 @@ footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid 
 <button data-t="43.2">Mega-constellation</button>
 <button data-t="49.8">Formation re-plan</button>
 </div>
+<p style="color:var(--dim);font-size:13px;margin:0">Every number in the film is printed by the reference demos and the conformance suite in the repository; nothing on screen is invented for the animation.</p>
 
-<h1>The rules of the orbital road.</h1>
-<p class="lede">Two spacecraft from different operators, with no radio contact, each work out alone which one should move out of the way, and both always get the same answer. Everything in the film above is taken from the reference demos and the conformance suite in the repository.</p>
+<article>
 
+<h2><span class="n">01</span>The problem</h2>
+<p>There are now roughly 15,000 working satellites in orbit, about two thirds of them in a single constellation, and plans for well over a hundred thousand more. When two satellites from different operators are predicted to pass too close, the operators still mostly sort it out by email and phone: who has the better data, who has fuel, who will move. That works when it is a handful of events a week between people who answer. It does not work when one side is slow, unreachable, out of contact, or a dead object that will never answer at all.</p>
+<p>What is missing is not better tracking. It is an agreed answer to a simple question that both sides can compute on their own: <strong>who gives way?</strong></p>
+
+<h2><span class="n">02</span>The answer is 150 years old</h2>
+<p>Ships solved this with the rules of the road (COLREGS). When two power-driven vessels cross, the one that sees the other on its starboard side gives way, and the other holds course. Both captains look at the same situation and reach the same conclusion. Nobody has to call anybody, and the vessel that holds course has a job too: be predictable.</p>
+<p>Starboard is that convention for spacecraft, written precisely enough that two computers built by different companies, compiled with different toolchains, reach the same verdict without exchanging a single byte.</p>
+
+<h2><span class="n">03</span>What runs on board</h2>
+<p>Each satellite receives the standard close-approach warning, a CCSDS Conjunction Data Message (CDM) from a tracking provider, and runs Starboard on it. If the encounter is risky (probability of collision at least 1 in 10,000, or a predicted miss under 1 km), it walks the same chain of five rules. The first rule that decides, decides:</p>
+<ol class="rules">
+<li><b>R1</b><span><strong>Capability.</strong> If only one of them can maneuver, that one moves. A dead satellite has right of way.</span></li>
+<li><b>R2</b><span><strong>Priority.</strong> Crewed beats critical beats operational beats deorbiting. The lower priority moves.</span></li>
+<li><b>R3</b><span><strong>Overtaking.</strong> If one is catching up from behind, the overtaker moves.</span></li>
+<li><b>R4</b><span><strong>Starboard.</strong> If exactly one sees the other approaching from its right, that one moves.</span></li>
+<li><b>R5</b><span><strong>Fair coin.</strong> Otherwise a bit of the encounter's id decides: deterministic for this encounter, 50/50 across many.</span></li>
+</ol>
+<p>The craft that gives way plans the smallest burn that restores a safe miss (a Clohessy-Wiltshire plan), and after the encounter two return burns put it back in its slot. In the crossing at the top of this page the predicted miss is 150 m with Pc 1.043 × 10⁻³; ACME-1 burns 1.012 m/s, passes 1,280 m clear, and is home again after 2.689 m/s in total.</p>
+<p>Both craft evaluate the rules on the <strong>same ordered pair</strong>, sorted by international designator, so agreement is not something that is hoped for. It holds by construction. That is Theorem 1 of the spec, and it is machine-checked with CBMC.</p>
+
+<h2><span class="n">04</span>The hard part is the bits</h2>
+<p>"Roughly the same answer" is not good enough. Near a threshold, a one-bit difference in a probability can make each satellite conclude the other will move. So the property Starboard actually has to deliver is that two different computers produce <strong>identical bits</strong> for every quantity that affects the verdict. Ordinary floating-point code does not do that: compilers fuse multiply-adds, x87 keeps excess precision, every libm has its own <code>sin</code> and <code>exp</code>, and <code>strtod</code> implementations differ in the last place.</p>
+<p>Starboard pins all of it:</p>
+<ul>
+<li>only IEEE-754 exact operations, no fused multiply-add, and two transcendental functions (<code>exp</code>, <code>sin</code>/<code>cos</code>) defined operation by operation instead of taken from a library;</li>
+<li>exact decimal ingest of CDM fields, provably correctly rounded, with no <code>strtod</code>;</li>
+<li>a quantization lattice that snaps inputs so tiny decoding differences cannot flip a decision;</li>
+<li>a J2 propagator and Patera's collision-probability integral, accurate to about 10⁻¹² against an independent reference.</li>
+</ul>
 <div class="grid">
-<div class="card"><h3 class="a">AGREE</h3><p>Both craft run the same five rules on the same ordered pair. Theorem 1, machine-checked with CBMC: they always reach the same verdict.</p></div>
-<div class="card"><h3 class="c">SAME BITS</h3><p>Pc 0x3F5117B3E9975E2E on every compiler, 11 CPU architectures and bare-metal Cortex-M. A computer that would get the maths wrong refuses to fly.</p></div>
-<div class="card"><h3 class="m">THE FLOCK</h3><p>A 204-byte maneuver notice ripples over inter-satellite links until all 72 craft hold the same ledger. The flock warns, it never decides.</p></div>
+<div class="stat"><b>58</b><span>compiler × optimisation × language builds, bit-identical</span></div>
+<div class="stat"><b>11</b><span>CPU architectures under QEMU, including RAD750-class PowerPC</span></div>
+<div class="stat"><b>3</b><span>bare-metal Cortex-M targets with no operating system</span></div>
 </div>
+<p>The controls matter as much as the passes: a build with x87 excess precision or FMA contraction produces different bits, and the boot self-test catches it and refuses to fly. A computer that would get the maths wrong does not get a vote.</p>
 
-<pre><span class="k">$ ./build/starboard_crossing_demo</span>
+<h2><span class="n">05</span>A rounding bug in ARM soft-float</h2>
+<p>Running the transcripts on FPU-less ARM turned up one single-ulp difference in a sine. Tracing it led to the last operation of the cosine kernel, a <code>1.0 + m</code> with a tiny negative <code>m</code>, where libgcc's software double addition (<code>__aeabi_dadd</code>, GCC 13) returned the wrong neighbour. A 200,000-case fuzz of double addition found 897 mismatches, all of them effective subtractions with an exponent gap of exactly 33, all rounded down. Reading the source suggests why: in the alignment path for large gaps the true round bit is folded into a sticky bit before a one-bit renormalisation needs it.</p>
+<div class="note">Caveats, plainly: this was observed under QEMU, the mechanism is read from the source rather than confirmed on silicon, and it has not yet been reported upstream. If you can run it on real ARM hardware, I would very much like to hear the result.</div>
+<p>For Starboard the consequence is concrete: two satellites using that routine would agree with each other and silently disagree with everyone else. The self-test now probes rounding at exponent gaps 31 to 34 and refuses such a platform, and the C library ships a correctly rounded replacement, checked against hardware on 49.4 million additions and subtractions. Write-up: <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/evidence/CROSS-ARCH.md">CROSS-ARCH.md</a>.</p>
+
+<h2><span class="n">06</span>When something goes wrong</h2>
+<p>The design question is not only "do they agree" but "what happens when they don't, or when someone lies":</p>
+<ul>
+<li><strong>Both move.</strong> If a fault makes both craft give way, their burns push them apart (Theorem 2). The failure mode is extra distance and wasted fuel, never a collision.</li>
+<li><strong>Claims are checked, or ignored.</strong> Rules 1 and 2 use claims a satellite could fake: "I can't maneuver", "I'm crewed". A claim that can't be verified offline against a signed registry is treated as if the craft were debris: you avoid it. No signing key ever flies; craft only verify.</li>
+<li><strong>Lies push toward physics.</strong> When both craft are unverified, the verdict falls through to geometry and the coin, which an adversary can only change by actually moving. A forged conjunction can cost a victim fuel but cannot steer it into anything, because the give-way displacement is always away from the claimed object.</li>
+<li><strong>Radiation.</strong> Every decision is computed twice and compared bit for bit, with a 2-of-3 vote on mismatch.</li>
+</ul>
+
+<h2><span class="n">07</span>The flock</h2>
+<p>Starlings in a murmuration never hold a meeting. Each bird watches its neighbours and a turn ripples through the flock. When a Starboard craft commits to a maneuver it broadcasts a 204-byte maneuver notice over its inter-satellite links; neighbours relay it hop by hop and keep a shared ledger, and each checks the mover's new path against its own. In the demo, a notice crosses a 72-satellite shell in 9 hops and every ledger ends with the same digest.</p>
+<p>The interesting case is a tight formation. Near the end of the film, eight craft fly 2 km apart and one must dodge a fragment. Its first plan would drift through three neighbours' slots, so they raise flock alerts, and because all eight hold the same CDM and ledger they screen the same candidate plans and reach the same choice: a later burn by the mover alone, 5.33 m/s, nobody within 1,024 m. Moving the whole formation in unison was evaluated too, and lost on both conflicts and fuel. The flock warns; it never decides.</p>
+
+<h2><span class="n">08</span>What it is not, yet</h2>
+<p>Starboard is ready for a hardware-in-the-loop campaign and a demonstration mission in shadow mode, where it decides and reports but a human approves every burn. It is not flight-proven. Specifically:</p>
+<ul>
+<li>all evidence so far is emulation: no real flight hardware, no timing on a flight processor;</li>
+<li>both craft must work from the same CDM. Producing that shared input (provider, cadence, authentication) is an ecosystem problem the repository does not solve;</li>
+<li>the registry is specified but not run by anyone, and the Ed25519 code has passed Wycheproof but not an audit;</li>
+<li>only Theorem 1 is machine-checked; formation policy is not yet normative; the scope is LEO.</li>
+</ul>
+<p>The full, unflattering list is <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/OPEN-PROBLEMS.md">OPEN-PROBLEMS.md</a>.</p>
+
+<h2><span class="n">09</span>How it was built</h2>
+<p>Starboard is a one-person project, and most of its code and documentation was written with Claude, Anthropic's AI model, which is why it appears as a contributor on GitHub. That is also why the repository is built so you don't have to trust its prose: <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/ASSURANCE.md">ASSURANCE.md</a> lists every claim with the command that reproduces it, and CI reruns those commands on every push. If something on this page does not reproduce, that is a bug and I want the report.</p>
+
+<h2><span class="n">10</span>Try it in 60 seconds</h2>
+<pre><span class="k">$ git clone https://github.com/Tokeloshe/starboard-protocol &amp;&amp; cd starboard-protocol</span>
+<span class="k">$ cmake -B build &amp;&amp; cmake --build build &amp;&amp; ./build/starboard_crossing_demo</span>
    Pc bits  ACME 0x3F5117B3E9975E2E | ORBX 0x3F5117B3E9975E2E  <span class="m">IDENTICAL [ok]</span>
    ACME-1   verdict: <span class="a">I GIVE WAY</span>   (Rule 4 - starboard)
    ORBX-9   verdict: <span class="c">I STAND ON</span>   (Rule 4 - starboard)
-   dv = 1.012 m/s   hill [radial -0.690, along -0.740, cross -0.000]
  T+000:00  TCA - closest approach 1280.0 m &gt;= R_SAFE 1024 m  <span class="m">[ok]</span>
 
-<span class="k">$ ports/c/murmuration</span>
-   hop  1  #*.........**...............................................*...........   5/72 know
+<span class="k">$ make -C ports/c &amp;&amp; ports/c/murmuration</span>
    hop  9  ##########################################*#############################  72/72 know
    flock ledgers: <span class="m">ALL 71 IDENTICAL</span> (digest 1E3AC8C816631BCF on every satellite)</pre>
+<p>The C99 flight library is 43 KB of code and 25 KB of RAM, with no heap and no recursion, MISRA C:2012-checked, and fuzzed with about 129 million hostile inputs. It reads CCSDS CDMs, speaks CCSDS telemetry, and integrates with NASA cFS, F′ or bare metal. A header-only C++17 reference implementation produces the same bits.</p>
 
-<footer>Specification CC BY 4.0 · reference code AGPL-3.0-or-later · <a href="https://github.com/Tokeloshe/starboard-protocol">github.com/Tokeloshe/starboard-protocol</a><br>Shadow-mode ready, not yet flight-proven. See <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/OPEN-PROBLEMS.md">OPEN-PROBLEMS.md</a>.</footer>
+<h2><span class="n">11</span>What would help</h2>
+<ul>
+<li><strong>Conjunction assessment people:</strong> where does the rule chain break against how you actually decide today?</li>
+<li><strong>Flight software people:</strong> what would it take to fly this in shadow mode on your bus?</li>
+<li><strong>Anyone:</strong> implement the spec in another language. If your bits disagree with the transcript, that is the most valuable bug report this project can receive.</li>
+</ul>
+<p>The specification is CC BY 4.0, free to implement forever, because a convention only works if everyone can adopt it. The reference code is AGPL-3.0-or-later, with a commercial license for proprietary flight software.</p>
+<div class="cta">
+<a class="primary" href="https://github.com/Tokeloshe/starboard-protocol">Read the code</a>
+<a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/DESIGN.md">The specification</a>
+<a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/ASSURANCE.md">Check the claims</a>
+<a href="https://github.com/Tokeloshe/starboard-protocol/issues">File an issue</a>
+</div>
+
+</article>
+
+<footer>Specification CC BY 4.0 · reference code AGPL-3.0-or-later · <a href="https://github.com/Tokeloshe/starboard-protocol">github.com/Tokeloshe/starboard-protocol</a><br>Satellite count: Jonathan McDowell's tracking data as reported in March 2026.</footer>
 </div>
 <script>
 (function(){

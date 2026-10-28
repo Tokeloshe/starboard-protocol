@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Build the README animation (docs/media/starboard-in-action.svg) and the
-GitHub Pages player (site/index.html).
+GitHub Pages launch page (site/index.html, from tools/animation/page.html).
 
 Every number on screen comes from the reference demos and the conformance
 suite:
@@ -1279,131 +1279,15 @@ def build():
 
 def write_html(svg):
     inline = svg.replace('width="1200" height="675" role="img"', 'role="img" id="film"')
-    html = PAGE.replace("{{SVG}}", inline).replace("{{T}}", f(T))
+    with open(PAGE_TEMPLATE, encoding="utf-8") as fh:
+        page = fh.read()
+    html = page.replace("{{SVG}}", inline).replace("{{T}}", f(T))
     os.makedirs(os.path.dirname(OUT_HTML), exist_ok=True)
     with open(OUT_HTML, "w", encoding="utf-8") as fh:
         fh.write(html)
 
 
-PAGE = r"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Starboard · The Rules of the Orbital Road</title>
-<meta name="description" content="An open, deterministic collision-avoidance protocol for satellites. Watch two rival satellites agree on who gives way with zero communication, then a 72-satellite flock learn about the maneuver.">
-<meta property="og:title" content="Starboard · The Rules of the Orbital Road">
-<meta property="og:description" content="Two satellites, no radio contact, one answer, bit for bit.">
-<style>
-:root{--bg:#04060c;--ink:#E9EEF7;--dim:#7C8AA5;--line:#1a2338;--amber:#FFB547;--cyan:#62D6FF;--mint:#7CF2C2}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
-.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
-header{display:flex;align-items:center;justify-content:space-between;padding:22px 0}
-.mark{letter-spacing:.42em;font-weight:600;font-size:13px}
-nav a{color:var(--dim);font-size:13px;margin-left:22px;letter-spacing:.06em}
-.stage{position:relative;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px var(--line)}
-.stage svg{display:block;width:100%;height:auto}
-.bar{display:flex;align-items:center;gap:14px;margin:14px 0 6px}
-button{background:none;border:1px solid var(--line);color:var(--ink);border-radius:999px;height:36px;min-width:36px;padding:0 14px;font:inherit;font-size:13px;cursor:pointer;letter-spacing:.04em}
-button:hover{border-color:var(--dim)}
-button.on{border-color:var(--amber);color:var(--amber)}
-input[type=range]{flex:1;accent-color:var(--amber);min-width:80px}
-.time{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--dim);width:92px;text-align:right}
-.chapters{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 40px}
-.chapters button{color:var(--dim)}
-h1{font-weight:300;font-size:clamp(28px,4vw,44px);letter-spacing:.02em;margin:56px 0 8px}
-.lede{color:var(--dim);max-width:720px;font-size:17px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin:36px 0}
-.card{border:1px solid var(--line);border-radius:12px;padding:20px;background:#070b16}
-.card h3{margin:0 0 6px;font-size:13px;letter-spacing:.22em;font-weight:600}
-.card p{margin:0;color:var(--dim);font-size:14px}
-pre{background:#070b16;border:1px solid var(--line);border-radius:12px;padding:18px;overflow:auto;font:12.5px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c8d3e6}
-.k{color:var(--dim)}.a{color:var(--amber)}.c{color:var(--cyan)}.m{color:var(--mint)}
-footer{color:var(--dim);font-size:13px;padding:48px 0 60px;border-top:1px solid var(--line);margin-top:60px}
-@media (max-width:640px){nav{display:none}.time{width:70px}}
-</style>
-</head>
-<body>
-<div class="wrap">
-<header><div class="mark">STARBOARD</div>
-<nav><a href="https://github.com/Tokeloshe/starboard-protocol">GitHub</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/DESIGN.md">Specification</a><a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/FLIGHT.md">Flight guide</a></nav></header>
-
-<div class="stage">{{SVG}}</div>
-<div class="bar">
-<button id="play" aria-label="Pause">Pause</button>
-<input id="scrub" type="range" min="0" max="{{T}}" step="0.01" value="0" aria-label="Scrub timeline">
-<span class="time" id="time">0.0 s</span>
-<button id="slow" aria-pressed="false">0.5×</button>
-</div>
-<div class="chapters">
-<button data-t="2.8">Two craft, one CDM</button>
-<button data-t="6.8">Each decides alone</button>
-<button data-t="13.6">Bit-identical</button>
-<button data-t="15.6">Give way</button>
-<button data-t="21.1">Closest approach</button>
-<button data-t="23.7">Back to slot</button>
-<button data-t="28.8">The murmuration</button>
-<button data-t="40.0">Ledgers agree</button>
-<button data-t="43.2">Mega-constellation</button>
-<button data-t="49.8">Formation re-plan</button>
-</div>
-
-<h1>The rules of the orbital road.</h1>
-<p class="lede">Two spacecraft from different operators, with no radio contact, each work out alone which one should move out of the way, and both always get the same answer. Everything in the film above is taken from the reference demos and the conformance suite in the repository.</p>
-
-<div class="grid">
-<div class="card"><h3 class="a">AGREE</h3><p>Both craft run the same five rules on the same ordered pair. Theorem 1, machine-checked with CBMC: they always reach the same verdict.</p></div>
-<div class="card"><h3 class="c">SAME BITS</h3><p>Pc 0x3F5117B3E9975E2E on every compiler, 11 CPU architectures and bare-metal Cortex-M. A computer that would get the maths wrong refuses to fly.</p></div>
-<div class="card"><h3 class="m">THE FLOCK</h3><p>A 204-byte maneuver notice ripples over inter-satellite links until all 72 craft hold the same ledger. The flock warns, it never decides.</p></div>
-</div>
-
-<pre><span class="k">$ ./build/starboard_crossing_demo</span>
-   Pc bits  ACME 0x3F5117B3E9975E2E | ORBX 0x3F5117B3E9975E2E  <span class="m">IDENTICAL [ok]</span>
-   ACME-1   verdict: <span class="a">I GIVE WAY</span>   (Rule 4 - starboard)
-   ORBX-9   verdict: <span class="c">I STAND ON</span>   (Rule 4 - starboard)
-   dv = 1.012 m/s   hill [radial -0.690, along -0.740, cross -0.000]
- T+000:00  TCA - closest approach 1280.0 m &gt;= R_SAFE 1024 m  <span class="m">[ok]</span>
-
-<span class="k">$ ports/c/murmuration</span>
-   hop  1  #*.........**...............................................*...........   5/72 know
-   hop  9  ##########################################*#############################  72/72 know
-   flock ledgers: <span class="m">ALL 71 IDENTICAL</span> (digest 1E3AC8C816631BCF on every satellite)</pre>
-
-<footer>Specification CC BY 4.0 · reference code AGPL-3.0-or-later · <a href="https://github.com/Tokeloshe/starboard-protocol">github.com/Tokeloshe/starboard-protocol</a><br>Shadow-mode ready, not yet flight-proven. See <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/OPEN-PROBLEMS.md">OPEN-PROBLEMS.md</a>.</footer>
-</div>
-<script>
-(function(){
-  var T={{T}}, film=document.getElementById('film');
-  var play=document.getElementById('play'), scrub=document.getElementById('scrub'),
-      time=document.getElementById('time'), slow=document.getElementById('slow');
-  var anims=[], paused=false, rate=1, dragging=false;
-  function grab(){ try{ anims=film.getAnimations({subtree:true}); }catch(e){ anims=document.getAnimations(); } }
-  function now(){ return anims.length ? ((anims[0].currentTime||0)/1000)%T : 0; }
-  function seek(t){ anims.forEach(function(a){ a.currentTime=t*1000; }); }
-  function setPaused(p){ paused=p; anims.forEach(function(a){ a.playbackRate=p?0:rate; });
-    play.textContent=p?'Play':'Pause'; play.setAttribute('aria-label',p?'Play':'Pause'); }
-  function tick(){ if(!dragging){ var t=now(); scrub.value=t.toFixed(2); time.textContent=t.toFixed(1)+' s'; }
-    requestAnimationFrame(tick); }
-  grab();
-  if(!anims.length){ document.querySelector('.bar').style.display='none'; document.querySelector('.chapters').style.display='none'; return; }
-  play.onclick=function(){ setPaused(!paused); };
-  slow.onclick=function(){ rate=rate===1?.5:1; if(!paused) anims.forEach(function(a){ a.playbackRate=rate; });
-    slow.classList.toggle('on',rate!==1); slow.setAttribute('aria-pressed',rate!==1); };
-  scrub.addEventListener('input',function(){ dragging=true; seek(+scrub.value); time.textContent=(+scrub.value).toFixed(1)+' s'; });
-  scrub.addEventListener('change',function(){ dragging=false; });
-  document.querySelectorAll('.chapters button').forEach(function(b){ b.onclick=function(){ seek(+b.dataset.t); }; });
-  document.addEventListener('keydown',function(e){ if(e.target.tagName==='INPUT')return;
-    if(e.code==='Space'){ e.preventDefault(); setPaused(!paused); }
-    if(e.code==='ArrowRight'){ seek(Math.min(T-.01,now()+2)); }
-    if(e.code==='ArrowLeft'){ seek(Math.max(0,now()-2)); } });
-  tick();
-})();
-</script>
-</body>
-</html>
-"""
+PAGE_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
 
 if __name__ == "__main__":
     svg = build()
