@@ -17,6 +17,7 @@ answer.
 [![MISRA C](https://img.shields.io/badge/MISRA%20C%3A2012-checked-2A6E3F.svg)](docs/evidence/MISRA.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/code-AGPL--3.0-blue.svg)](LICENSE)
 [![Spec: CC BY 4.0](https://img.shields.io/badge/spec-CC%20BY%204.0-lightgrey.svg)](docs/DESIGN.md)
+[![Sponsor](https://img.shields.io/badge/sponsor-GitHub-EA4AAA?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/Tokeloshe)
 
 </div>
 
@@ -307,7 +308,11 @@ infrastructure to exist, you can fuel the next revision:
 
 <div align="center">
 
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-Tokeloshe-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/Tokeloshe)
+<a href="https://github.com/sponsors/Tokeloshe"><img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor on GitHub" height="40"></a>
+&nbsp;&nbsp;
+<a href="https://buymeacoffee.com/Tokeloshe"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
+
+<sub>GitHub Sponsors: two clicks if you are signed in to GitHub. Buy Me a Coffee: any card, no account needed.</sub>
 
 *Starring the repo, filing a sharp issue, or implementing the spec in your
 language of choice are equally appreciated ways to help.*
