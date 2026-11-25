@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Try Starboard · Satellite give-way in your browser</title>
+<meta name="description" content="Paste a CCSDS conjunction warning (CDM) and see what each satellite running Starboard decides: who moves, when, and by how much. Runs the real flight code in your browser via WebAssembly; nothing is uploaded.">
+<meta property="og:title" content="Try Starboard: satellite give-way in your browser">
+<meta property="og:description" content="Paste a collision warning, get the verdict both satellites agree on, bit for bit.">
+<meta property="og:image" content="og.png">
+<style>
+:root{--bg:#04060c;--panel:#070b16;--line:#1a2338;--ink:#E9EEF7;--body:#C9D3E3;--dim:#7C8AA5;
+--cyan:#62D6FF;--mint:#7CF2C2;--amber:#FFB547;--rose:#FF5D73;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+--sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--body);font:16px/1.55 var(--sans)}
+a{color:var(--cyan)}
+main{max-width:1100px;margin:0 auto;padding:28px 16px 64px}
+h1{color:var(--ink);font-size:clamp(1.6rem,4vw,2.3rem);margin:0 0 6px;letter-spacing:-.01em}
+h2{color:var(--ink);font-size:1.05rem;margin:0 0 10px}
+.lede{max-width:760px;margin:0 0 20px}
+.badge{display:inline-flex;align-items:center;gap:8px;font:13px var(--mono);padding:6px 10px;border:1px solid var(--line);
+border-radius:999px;background:var(--panel);color:var(--dim)}
+.badge.ok{color:var(--mint);border-color:#1f4a3d}.badge.bad{color:var(--rose);border-color:#5a2230}
+.dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px}
+@media (max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+label{display:block;font-size:13px;color:var(--dim);margin:12px 0 4px}
+textarea,select,input{width:100%;background:#03050a;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+padding:10px;font:13px/1.45 var(--mono)}
+textarea{min-height:300px;resize:vertical;white-space:pre;overflow-x:auto}
+textarea:focus,select:focus,input:focus,button:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row>*{flex:0 1 auto;min-width:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:480px){.two{grid-template-columns:1fr}}
+button{background:#0d1426;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 12px;
+font:14px var(--sans);cursor:pointer}
+button:hover{border-color:var(--cyan)}
+button.primary{background:var(--cyan);color:#021018;border-color:var(--cyan);font-weight:600}
+.drop{border:1px dashed var(--line);border-radius:8px;padding:8px 10px;color:var(--dim);font-size:13px}
+.drop.over{border-color:var(--cyan);color:var(--cyan)}
+.verdict{border-radius:10px;padding:14px;border:1px solid var(--line);margin-bottom:12px;background:#03050a}
+.verdict .who{font:12px var(--mono);color:var(--dim);text-transform:uppercase;letter-spacing:.06em}
+.verdict .act{font-size:1.5rem;font-weight:700;margin:2px 0 6px;color:var(--ink)}
+.verdict.MOVE{border-color:var(--amber)}.verdict.MOVE .act{color:var(--amber)}
+.verdict.HOLD{border-color:var(--cyan)}.verdict.HOLD .act{color:var(--cyan)}
+.verdict.NOTHING{border-color:#1f4a3d}.verdict.NOTHING .act{color:var(--mint)}
+.verdict.ALERT,.verdict.ERROR{border-color:var(--rose)}.verdict.ALERT .act,.verdict.ERROR .act{color:var(--rose)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:10px 0 0;font-size:14px}
+dt{color:var(--dim)}dd{margin:0;color:var(--ink);font-family:var(--mono);overflow-wrap:anywhere}
+.agree{font:13px var(--mono);color:var(--mint);margin:4px 0 0}
+.muted{color:var(--dim);font-size:13px}
+footer{margin-top:28px;color:var(--dim);font-size:13px}
+code{font-family:var(--mono);color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Try Starboard</h1>
+  <p class="lede">Paste a collision warning (a CCSDS <abbr title="Conjunction Data Message">CDM</abbr>, the file space-tracking
+    providers send to operators) and see what <em>each</em> satellite running Starboard decides: who moves, when, and by how much.
+    This page runs the actual C flight code, compiled to WebAssembly, in your browser. Nothing is uploaded.</p>
+  <span id="st" class="badge"><span class="dot"></span>loading the flight code…</span>
+
+  <div class="grid">
+    <section class="card" aria-labelledby="in-h">
+      <h2 id="in-h">1 · The warning</h2>
+      <div class="row">
+        <button type="button" data-ex="shell_vs_debris.cdm">Example: satellite vs debris</button>
+        <button type="button" data-ex="crossing_demo.cdm">Example: two operators crossing</button>
+        <button type="button" data-ex="itrf_rocket_body.cdm">Example: old rocket body</button>
+      </div>
+      <label for="cdm">CDM text (KVN)</label>
+      <textarea id="cdm" spellcheck="false" wrap="off" placeholder="CCSDS_CDM_VERS = 1.0 …"></textarea>
+      <div id="drop" class="drop" style="margin-top:8px">…or drop a <code>.cdm</code> file here, or
+        <label style="display:inline;color:var(--cyan);cursor:pointer;margin:0">choose one<input id="file" type="file" accept=".cdm,.txt,.kvn" style="display:none"></label>.</div>
+      <div class="two">
+        <div><label for="p1">Object 1 is a…</label><select id="p1"></select></div>
+        <div><label for="p2">Object 2 is a…</label><select id="p2"></select></div>
+      </div>
+      <div class="row" style="margin-top:14px"><button id="go" type="button" class="primary">Decide</button>
+        <span class="muted">Each satellite decides alone, from its own copy of the warning.</span></div>
+    </section>
+
+    <section class="card" aria-labelledby="out-h" aria-live="polite">
+      <h2 id="out-h">2 · What each satellite does</h2>
+      <div id="out"><p class="muted">Pick an example or paste a CDM, then press <strong>Decide</strong>.</p></div>
+    </section>
+  </div>
+
+  <footer>
+    Profiles set what matters: whether the craft can maneuver, its priority tier, and the window in which it prefers to burn.
+    Times are UTC. Without a registry, each craft trusts only itself, so both may give way (the protocol guarantees their burns add
+    separation). The library is the same one you can drop into flight software (<code>dist/starboard.c</code>), call from Python
+    (<code>pip install</code>), or run on the ground (<code>sbctl</code>):
+    <a href="https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/QUICKSTART.md">quickstart</a> ·
+    <a href="https://github.com/Tokeloshe/starboard-protocol">source</a> · <a href="./">the film</a>.
+  </footer>
+</main>
+<script>
+"use strict";
+const PROFILES = [["no-propulsion","No thrusters / debris"],["cubesat","CubeSat"],["smallsat","Small sat (propulsion)"],
+  ["constellation","Constellation sat"],["high-value","High-value sat"],["crewed","Crewed vehicle"]];
+const $ = (id) => document.getElementById(id);
+let ex = null;
+
+for (const sel of [$("p1"), $("p2")]) for (const [v, t] of PROFILES) sel.add(new Option(t, v));
+$("p1").value = "smallsat"; $("p2").value = "smallsat";
+
+function badge(ok, text){ const b=$("st"); b.className="badge "+(ok?"ok":"bad"); b.lastChild.textContent=" "+text; }
+const stub = () => 0;
+fetch("starboard.wasm").then(r => r.arrayBuffer()).then(buf => WebAssembly.instantiate(buf,
+  { wasi_snapshot_preview1: { fd_close: stub, fd_seek: stub, fd_write: stub } })).then(({instance}) => {
+  ex = instance.exports;
+  const bits = ex.sbw_selftest();
+  if (bits === 0) badge(true, "self-test passed: your browser computes bit-identically to every Starboard satellite");
+  else { badge(false, "self-test FAILED (0x"+bits.toString(16)+"): this browser's arithmetic is non-conformant"); ex = null; }
+}).catch(err => badge(false, "could not load the flight code: " + err));
+
+function objects(text){
+  const out = [];
+  const re = /^\s*OBJECT\s*=\s*(OBJECT[12])[\s\S]*?(?=^\s*OBJECT\s*=|$(?![\s\S]))/gm;
+  let m; while ((m = re.exec(text))) {
+    const block = m[0];
+    const g = (k) => { const r = new RegExp("^\\s*"+k+"\\s*=\\s*(.+?)\\s*$","m").exec(block); return r ? r[1] : ""; };
+    out.push({ intl: g("INTERNATIONAL_DESIGNATOR"), desig: g("OBJECT_DESIGNATOR"), name: g("OBJECT_NAME"), man: g("MANEUVERABLE") });
+  }
+  return out;
+}
+function suggestProfiles(){
+  const o = objects($("cdm").value);
+  [$("p1"), $("p2")].forEach((sel, i) => { if (o[i] && /^(NO|N\/A)$/i.test(o[i].man)) sel.value = "no-propulsion";
+    else if (o[i] && sel.value === "no-propulsion") sel.value = "smallsat"; });
+}
+function decide(text, me, profile){
+  const enc = new TextEncoder();
+  const t = enc.encode(text), mem = new Uint8Array(ex.memory.buffer);
+  if (t.length > ex.sbw_input_cap()) return { action:"ERROR", summary:"WARNING NOT READ: file too large." };
+  mem.set(t, ex.sbw_input());
+  const m = enc.encode((me || "").slice(0, 60) + "\0"); mem.set(m, ex.sbw_me_buf());
+  const n = ex.sbw_decide(t.length, PROFILES.findIndex(p => p[0] === profile), 0n);
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(ex.memory.buffer, ex.sbw_output(), n)));
+}
+const GPS0 = Date.UTC(1980,0,6), LEAP = 18000;   /* GPS - UTC since 2017 */
+const utc = (ms) => new Date(GPS0 + ms - LEAP).toISOString().replace("T"," ").replace(/\.\d+Z$/," UTC");
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const LABEL = { MOVE:"Move", HOLD:"Hold course", NOTHING:"No action", ALERT:"Alert operators", ERROR:"Warning not read" };
+
+function card(who, r){
+  let rows = "";
+  if (r.action !== "ERROR") {
+    rows += `<dt>closest approach</dt><dd>${r.miss_m.toFixed(0)} m at ${utc(r.tca_gps_ms)}</dd>`;
+    rows += `<dt>collision probability</dt><dd>${r.pc.toExponential(2)}</dd>`;
+    if (r.rule) rows += `<dt>decided by</dt><dd>${esc(r.rule_text)}</dd>`;
+    if (r.action === "MOVE") {
+      rows += `<dt>burn</dt><dd>${r.dv_mps.toFixed(3)} m/s at ${utc(r.burn_gps_ms)}</dd>`;
+      rows += `<dt>direction (RTN)</dt><dd>[${r.dv_rtn_mps.map(v => (v>=0?"+":"")+v.toFixed(4)).join(", ")}] m/s</dd>`;
+      rows += `<dt>return to slot</dt><dd>${r.return_dv_mps.toFixed(3)} m/s afterwards</dd>`;
+    }
+    rows += `<dt>conjunction id</dt><dd>${r.conjunction_id}</dd>`;
+  }
+  return `<div class="verdict ${r.action}"><div class="who">${esc(who)}</div><div class="act">${LABEL[r.action]||r.action}</div>
+    <div>${esc(r.summary)}</div>${rows ? "<dl>"+rows+"</dl>" : ""}</div>`;
+}
+function run(){
+  const text = $("cdm").value;
+  if (!ex) { $("out").innerHTML = '<p class="muted">The flight code is not loaded (see the badge above).</p>'; return; }
+  if (!text.trim()) { $("out").innerHTML = '<p class="muted">Paste a CDM first.</p>'; return; }
+  const o = objects(text);
+  if (o.length < 2) { $("out").innerHTML = card("Warning", decide(text, "", "smallsat")); return; }
+  const ids = o.map(x => x.intl && !/^UNKNOWN$/i.test(x.intl) ? x.intl : x.desig);
+  const r1 = decide(text, ids[0], $("p1").value), r2 = decide(text, ids[1], $("p2").value);
+  let note = "";
+  if (r1.action !== "ERROR" && r2.action !== "ERROR")
+    note = r1.conjunction_id === r2.conjunction_id
+      ? `<p class="agree">✓ Both satellites computed the same encounter (id ${r1.conjunction_id}) independently.</p>` : "";
+  $("out").innerHTML = card(`On board ${o[0].name || ids[0]}`, r1) + card(`On board ${o[1].name || ids[1]}`, r2) + note;
+}
+function load(text){ $("cdm").value = text; suggestProfiles(); run(); }
+document.querySelectorAll("[data-ex]").forEach(b => b.addEventListener("click",
+  () => fetch("examples/" + b.dataset.ex).then(r => r.text()).then(load)));
+$("go").addEventListener("click", run);
+$("cdm").addEventListener("change", suggestProfiles);
+$("file").addEventListener("change", e => e.target.files[0] && e.target.files[0].text().then(load));
+const drop = $("drop");
+["dragenter","dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => e.dataTransfer.files[0] && e.dataTransfer.files[0].text().then(load));
+</script>
+</body>
+</html>

@@ -10,6 +10,55 @@ begins at publication.
 
 ---
 
+## v0.7.0 — "no-brainer edition"
+
+From "rigorous and complete" to **usable in five minutes by anyone**. No
+pinned bit of SB/1 changed: the v1 and v2 transcripts, the self-test known
+answers and `RULESET_ID` are untouched.
+
+### One call, six profiles (`starboard_easy.h`)
+- `sb_easy_decide(cdm, len, me, profile, now, &advice)` returns **MOVE /
+  HOLD / NOTHING / ALERT / ERROR**, the burn (time, Δv in RTN, return cost)
+  and a plain-English sentence for operators. `me` may be the international
+  designator, catalog number or object name.
+- **Six spacecraft profiles** (no-propulsion, cubesat, smallsat,
+  constellation, high-value, crewed) set capability, priority tier and a
+  burn-lead window.
+- **Cheapest burn in the window.** Burn cost is not monotonic in lead time
+  (one orbit ahead can cost 10× half an orbit ahead for in-plane
+  crossings); the easy layer searches each profile's window on a fixed
+  5-minute grid. Example: the CubeSat burn in `crossing_demo.cdm` drops from
+  3.18 m/s to 0.31 m/s. Each candidate is the flight layer's own plan, so
+  the result stays reproducible from shared data.
+- Makes no decision of its own: `tests/test_easy.c` (427 checks) verifies
+  every answer against `sb_fsw_decide` for every example, side and profile.
+- MISRA-checked with no new deviations; included in the bare-metal build.
+
+### Four ways in
+- **Single-file C library** `dist/starboard.c` + `dist/starboard.h`
+  (`tools/amalgamate.py`; CI fails if stale). Compiles warning-free with
+  gcc/clang at -O0…-O3, and as C++.
+- **Python package** (`python/`): `pip install`, `starboard.decide()`,
+  UTC/GPS time helpers, and a `starboard` command (`--json` for pipelines).
+  It wraps the C flight code through ctypes, so answers are bit-identical.
+- **In the browser** (`site/try.html`): the flight code compiled to
+  WebAssembly (92 KB). Runs the self-test on the visitor's machine, then
+  shows both satellites' decisions side by side. Nothing uploaded.
+  36/36 decisions bit-identical to native C.
+- **Reference flight loop** (`examples/flight_loop.c`): boot → warning →
+  burn → maneuver notice → relay → CCSDS telemetry, with platform hooks
+  marked; `docs/INTEGRATION.md` maps them to NASA cFS, F Prime and RTOS.
+
+### Docs
+- `docs/QUICKSTART.md`, `docs/INTEGRATION.md`; README leads with the four
+  paths; `examples/quickstart.c`.
+
+### Fixes
+- `sha512.c`: `sb_compress` takes a pointer, not `uint8_t[128]`, avoiding a
+  GCC `-Wstringop-overread` false positive once inlined across files
+  (bit-neutral).
+
+
 ## Unreleased
 
 ### Animation and interactive player

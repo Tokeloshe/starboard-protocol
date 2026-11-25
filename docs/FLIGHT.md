@@ -1,6 +1,6 @@
 # Starboard on a Spacecraft — Flight Integration Guide
 
-**Flight layer v0.6.0 · ruleset SB/1 (`RULESET_ID 0x53420001`) · C99, MISRA-checked**
+**Flight layer v0.7.0 · ruleset SB/1 (`RULESET_ID 0x53420001`) · C99, MISRA-checked**
 
 This is the document a flight-software team integrates from. It covers what
 runs on board, what it needs (memory, stack, CPU, inputs), what it emits
@@ -279,6 +279,12 @@ always safe and picks the cheapest conflict-free plan. Formation-follow
 operators the flock only warns.
 
 ## 8. Integrating with a flight framework
+
+Step-by-step wiring (the four hooks, cFS / F Prime / RTOS skeletons, build
+systems, a bring-up checklist) is in [`INTEGRATION.md`](INTEGRATION.md);
+[`examples/flight_loop.c`](../examples/flight_loop.c) is the compiled
+reference. For a single warning without the flight layer's state,
+`starboard_easy.h` (`sb_easy_decide`) gives the same decision in one call.
 
 The library has a C ABI with one context struct and no threads, OS or heap,
 so it drops into any executive:

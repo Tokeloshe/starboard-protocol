@@ -20,18 +20,18 @@ LDLIBS  := -lm
 RUN     ?=
 AR      ?= ar
 
-LIB_SRC := canon.c geometry.c propagator.c covariance.c screening.c rules.c \
+LIB_SRC := easy.c canon.c geometry.c propagator.c covariance.c screening.c rules.c \
            maneuver.c multibody.c broadphase.c sha512.c registry.c \
            ed25519.c cdm.c fsw.c ccsds.c flock.c softdouble.c
 LIB_OBJ := $(LIB_SRC:.c=.o)
-HDRS    := starboard.h starboard_cdm.h starboard_fsw.h starboard_flock.h \
+HDRS    := starboard.h starboard_cdm.h starboard_fsw.h starboard_flock.h starboard_easy.h \
            starboard_registry.h
 GOLDEN     := ../../conformance/expected_bits.txt
 GOLDEN_EXT := ../../conformance/expected_bits_ext.txt
 EXAMPLES   := ../../examples/cdm
 
 PROGS := sb_bits sb_ext sbctl murmuration test_fsw test_fsw_fi test_flock \
-         test_softdouble
+         test_softdouble test_easy
 
 all: libstarboard.a $(PROGS)
 
@@ -64,6 +64,9 @@ test_fsw_fi: tests/test_fsw.c $(LIB_SRC) $(HDRS)
 test_softdouble: tests/test_softdouble.c softdouble.c
 	$(CC) $(CFLAGS) tests/test_softdouble.c softdouble.c $(LDLIBS) -o $@
 
+test_easy: tests/test_easy.c libstarboard.a
+	$(CC) $(CFLAGS) tests/test_easy.c libstarboard.a $(LDLIBS) -o $@
+
 test_flock: tests/test_flock.c libstarboard.a
 	$(CC) $(CFLAGS) tests/test_flock.c libstarboard.a $(LDLIBS) -o $@
 
@@ -84,11 +87,12 @@ check-ext: sb_ext
 	  echo "SB-C2 v2: C99 port == extended golden (byte-identical)"; \
 	else echo "FAIL: v2 transcript diverges:"; diff $(GOLDEN_EXT) sb_c_ext.txt; exit 1; fi
 
-check-tests: sbctl test_fsw test_fsw_fi test_flock
+check-tests: sbctl test_fsw test_fsw_fi test_flock test_easy
 	$(RUN) ./sbctl selftest
 	$(RUN) ./test_fsw $(EXAMPLES)
 	$(RUN) ./test_fsw_fi $(EXAMPLES)
 	$(RUN) ./test_flock
+	$(RUN) ./test_easy $(EXAMPLES)
 
 clean:
 	rm -f $(LIB_OBJ) libstarboard.a $(PROGS) sb_c_bits.txt sb_c_ext.txt

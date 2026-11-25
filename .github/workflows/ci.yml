@@ -4,7 +4,8 @@
 # Every claim in the README is re-proven here on every push: conformance
 # vectors, bit-agreement across compilers / languages / CPU architectures /
 # bare-metal MCUs, the flight-software test suites with fault injection,
-# fuzzing, MISRA C:2012 analysis and the CBMC proofs of Theorem 1.
+# fuzzing, MISRA C:2012 analysis and the CBMC proofs of Theorem 1; plus the
+# ways in: the single-file library, the Python package and the browser build.
 name: verify
 
 on:
@@ -39,6 +40,66 @@ jobs:
           make -C ports/c murmuration sbctl
           ports/c/murmuration
           for f in examples/cdm/*.cdm; do ports/c/sbctl cdm "$f" --verified; done
+      - name: single-file library (dist/) is current and builds warning-free
+        run: |
+          python3 tools/amalgamate.py --check
+          for cc in gcc clang; do for o in -O0 -O2 -O3; do
+            for ex in quickstart flight_loop; do
+              $cc -std=c99 $o -ffp-contract=off -Wall -Wextra -Wpedantic -Werror \
+                -Idist examples/$ex.c dist/starboard.c -lm -o $ex
+            done
+          done; done
+          g++ -std=c++17 -O2 -ffp-contract=off -Wall -Wextra -Werror -Idist -x c++ \
+            -c -o /dev/null - <<< '#include "starboard.h"'
+          ./quickstart examples/cdm/shell_vs_debris.cdm SHELL-1042 constellation
+          ./flight_loop examples/cdm/crossing_demo.cdm
+
+  python:
+    name: Python package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    # Windows (MSVC) is not yet verified: report, don't block.
+    continue-on-error: ${{ matrix.os == 'windows-2022' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install
+        run: python -m pip install ./python
+      - name: tests (outside the source tree)
+        working-directory: ${{ runner.temp }}
+        run: |
+          python ${{ github.workspace }}/python/tests/test_starboard.py
+          starboard --selftest
+          starboard ${{ github.workspace }}/examples/cdm/shell_vs_debris.cdm --me SHELL-1042 --profile constellation
+
+  webassembly:
+    name: browser build (WebAssembly) == native C
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q clang lld wasi-libc
+      - name: native reference
+        run: |
+          gcc -std=c99 -O2 -ffp-contract=off -Idist ports/wasm/native_check.c \
+            dist/starboard.c -lm -o native_check
+          ./native_check examples/cdm/*.cdm > native.txt
+      - name: the committed site/starboard.wasm agrees with native C
+        run: |
+          node tools/check_wasm.js site/starboard.wasm examples/cdm/*.cdm > wasm.txt
+          diff native.txt wasm.txt && grep -q '^selftest 0$' wasm.txt
+      - name: a fresh wasm build agrees too
+        run: |
+          tools/build_wasm.sh
+          node tools/check_wasm.js site/starboard.wasm examples/cdm/*.cdm > fresh.txt
+          diff native.txt fresh.txt
 
   sanitizers:
     name: ASan + UBSan (flight layer with SEU fault injection)

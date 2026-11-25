@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starboard-protocol"
+version = "0.7.0"
+description = "Deterministic satellite collision avoidance: read a CCSDS conjunction warning, get the give-way verdict and burn, bit-identical on every spacecraft."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "AGPL-3.0-or-later" }
+authors = [{ name = "James H" }]
+keywords = ["satellite", "collision avoidance", "conjunction assessment", "CCSDS", "CDM", "space traffic management", "orbital mechanics", "space debris", "starlink", "cubesat"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+]
+
+[project.urls]
+Homepage = "https://github.com/Tokeloshe/starboard-protocol"
+Documentation = "https://github.com/Tokeloshe/starboard-protocol/blob/main/docs/QUICKSTART.md"
+
+[project.scripts]
+starboard = "starboard.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

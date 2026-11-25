@@ -62,7 +62,11 @@ static void sb_store_be64(uint8_t *p, uint64_t x)
     }
 }
 
-static void sb_compress(uint64_t h[8], const uint8_t block[128])
+/* `block` is a pointer, not `const uint8_t block[128]`: GCC treats an array
+ * parameter as a size promise and, once inlined across translation units
+ * (the dist/ single-file build), warns on callers whose guard it cannot
+ * follow (-Wstringop-overread false positive). Every call passes 128 bytes. */
+static void sb_compress(uint64_t h[8], const uint8_t *block)
 {
     uint64_t w[80];
     unsigned i;

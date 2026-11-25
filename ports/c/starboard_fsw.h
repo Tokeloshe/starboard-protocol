@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-#define SB_FSW_VERSION          (0x00060000U)   /* 0.6.0 */
+#define SB_FSW_VERSION          (0x00070000U)   /* 0.7.0 */
 #define SB_FSW_MAX_ENCOUNTERS   (16U)
 #define SB_FSW_MAX_COUNTERPARTS (32U)
 #define SB_FSW_TM_MAX_BYTES     (256U)

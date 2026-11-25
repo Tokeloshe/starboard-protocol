@@ -34,6 +34,11 @@ library** (`libstarboard.a`, see [`docs/FLIGHT.md`](../../docs/FLIGHT.md)).
 | Flight layer, CCSDS telemetry | `fsw.c` `ccsds.c` | — (C only; C ABI for C++ hosts) |
 | The flock (Layer 4) | `flock.c` | — |
 | Correctly-rounded soft double for FPU-less ARM | `softdouble.c` | x86-64 hardware, 49 M cases |
+| The five-minute API: profiles, one-call decide, plain-English summary | `easy.c` `starboard_easy.h` | `tests/test_easy.c`: every answer equals `sb_fsw_decide` |
+
+Don't want to build a library? `python3 tools/amalgamate.py` writes the
+whole thing as two files, [`dist/starboard.c`](../../dist/starboard.c) and
+[`dist/starboard.h`](../../dist/starboard.h) (CI checks they are current).
 
 ```
 make check                 # v1 + v2 transcripts, self-test, flight/flock tests

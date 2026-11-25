@@ -8,7 +8,9 @@ abstract: >-
   Starboard is an open "rules of the road" for satellites: a deterministic
   collision-avoidance and give-way protocol in which two spacecraft from rival
   operators, with no radio contact, independently compute the identical
-  verdict — down to the last bit — about which one maneuvers. It ingests
+  verdict — down to the last bit — about which one maneuvers. It can be
+  used in five minutes: a one-call API with six spacecraft profiles, as a
+  single-file C library, a Python package or in the browser. It ingests
   standard CCSDS Conjunction Data Messages (CDMs), computes a covariance-aware
   probability of collision (Patera contour integral), applies five
   COLREGS-inspired rules (capability, tier, overtaking, starboard, fair coin)
@@ -29,8 +31,8 @@ authors:
 repository-code: "https://github.com/Tokeloshe/starboard-protocol"
 url: "https://github.com/Tokeloshe/starboard-protocol"
 license: AGPL-3.0-or-later
-version: 0.6.0
-date-released: "2026-10-25"
+version: 0.7.0
+date-released: "2026-11-25"
 keywords:
   - space traffic management
   - satellite collision avoidance

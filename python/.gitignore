@@ -1,0 +1,7 @@
+csrc/starboard.c
+csrc/starboard.h
+build/
+*.egg-info/
+__pycache__/
+*.so
+*.pyd

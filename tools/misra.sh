@@ -15,7 +15,7 @@ set -u
 cd "$(dirname "$0")/../ports/c"
 FILES="canon.c geometry.c propagator.c covariance.c screening.c rules.c
        maneuver.c multibody.c broadphase.c sha512.c registry.c ed25519.c
-       cdm.c fsw.c ccsds.c flock.c softdouble.c"
+       cdm.c fsw.c ccsds.c flock.c softdouble.c easy.c"
 OUT=$(mktemp)
 trap 'rm -f "$OUT"' EXIT
 cppcheck --std=c99 --addon=misra --enable=warning,style,portability,performance \

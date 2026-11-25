@@ -30,12 +30,22 @@ Key facts:
   and bare-metal Cortex-M3/M4F/M7; fuzzing (~129M executions); found a
   misrounding in ARM soft-float double addition (libgcc __aeabi_dadd) and
   ships a verified replacement.
+- Easy to adopt: a one-call API (`sb_easy_decide` in C,
+  `starboard.decide()` in Python) returns MOVE / HOLD / NOTHING / ALERT /
+  ERROR plus a plain-English summary; six spacecraft profiles (no-propulsion,
+  cubesat, smallsat, constellation, high-value, crewed) pick the cheapest
+  burn in each profile's lead window. Ships as a single-file C library
+  (dist/starboard.c), a Python package, and a WebAssembly build that runs
+  in the browser (site/try.html).
 - Status: verified in software and emulation; not yet flown or tested on
   flight hardware.
 
 ## Docs
 
 - [README](README.md): plain-language overview and quick start
+- [Quickstart](docs/QUICKSTART.md): browser, Python, CLI, single-file C, flight
+- [Integration](docs/INTEGRATION.md): the four hooks; NASA cFS, F Prime, RTOS
+- [Try it in a browser](https://tokeloshe.github.io/starboard-protocol/try.html)
 - [Specification](docs/DESIGN.md): normative rules, theorems, constants
 - [Flight integration](docs/FLIGHT.md): API, budgets, modes, telemetry
 - [Wire protocol](docs/PROTOCOL.md): handshake and flock notices

@@ -20,7 +20,7 @@ C=ports/c
 LIB="$C/canon.c $C/geometry.c $C/propagator.c $C/covariance.c $C/screening.c
      $C/rules.c $C/maneuver.c $C/multibody.c $C/broadphase.c $C/sha512.c
      $C/registry.c $C/ed25519.c $C/cdm.c $C/fsw.c $C/ccsds.c $C/flock.c
-     $C/softdouble.c"
+     $C/softdouble.c $C/easy.c"
 COMMON="-std=c99 -O2 -ffp-contract=off -ffunction-sections -fdata-sections"
 LINK="--specs=rdimon.specs -T $C/baremetal/mps2.ld -Wl,--gc-sections -lm"
 

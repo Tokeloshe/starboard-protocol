@@ -73,7 +73,51 @@ provider) and runs Starboard on board:
                   its slot  ⤺  ╱
 ```
 
-## Try it in 60 seconds
+## Use it in 5 minutes
+
+Pick how you work. Every path runs the **same C flight code**, so the answers
+are bit-identical everywhere.
+
+| | You | Do this |
+|---|---|---|
+| 🌐 | **Just curious** | [**Try it in your browser**](https://tokeloshe.github.io/starboard-protocol/try.html): paste a warning, see what both satellites decide. Nothing to install. |
+| 🐍 | **Ground segment, analyst, researcher** | `pip install "git+https://github.com/Tokeloshe/starboard-protocol#subdirectory=python"` |
+| 📄 | **Writing C/C++** | copy [`dist/starboard.c`](dist/starboard.c) + [`dist/starboard.h`](dist/starboard.h) into your project: one file, like SQLite |
+| 🛰️ | **Flying a spacecraft** | start from [`examples/flight_loop.c`](examples/flight_loop.c), then [`docs/INTEGRATION.md`](docs/INTEGRATION.md) (NASA cFS, F Prime, RTOS) |
+
+The whole API is one call. Tell it which object is you and what kind of
+spacecraft you are:
+
+```python
+import starboard
+advice = starboard.decide("warning.cdm", me="2026-001A", profile="smallsat")
+print(advice.summary)
+```
+
+```c
+SbAdvice a;
+sb_easy_decide(cdm, len, "2026-001A", SB_SAT_SMALLSAT, now_gps_ms, &a);
+if (a.action == SB_ACTION_MOVE) schedule_burn(a.burn_gps_ms, a.dv_rtn_mps);
+```
+
+```text
+MOVE: give way to 2026-911ABC (DEB-FRAGMENT). Burn 0.277 m/s 2 h 15 min before closest
+approach (RTN +0.041, +0.272, -0.037 m/s). Closest approach 312 m, Pc 3.4e-3; decided by
+the capability rule (only one craft can maneuver).
+```
+
+**Six ready-made profiles** cover almost every spacecraft: `no-propulsion`
+(including debris and dead satellites), `cubesat`, `smallsat`,
+`constellation`, `high-value` and `crewed`. Each one sets whether you can
+maneuver, your priority, and the window in which you prefer to burn.
+Starboard then picks the **cheapest burn in that window**. That matters: a
+burn exactly one orbit ahead can cost 10× the fuel of one half an orbit
+ahead, and the search avoids it automatically. The answer is always one of
+**MOVE**, **HOLD**, **NOTHING**, **ALERT** (you should move but can't) or
+**ERROR** (never treated as safe). Full walkthrough:
+[`docs/QUICKSTART.md`](docs/QUICKSTART.md).
+
+### See the demos
 
 You need a C/C++ compiler, CMake and `make`.
 
@@ -120,7 +164,7 @@ what that means.
 | Same bits on **11 CPU architectures** (incl. the RAD750-class PowerPC used on Mars rovers) and on bare-metal **CubeSat microcontrollers** | Timing measured on the actual flight processor |
 | **Machine-checked proof** that both satellites always agree (CBMC) | Machine-checked proofs of the other three theorems |
 | **Fuzzed** with ~129 million hostile inputs; **MISRA C:2012**-checked | A professional crypto audit |
-| Speaks standard **CCSDS telemetry**; integrates with NASA cFS, F′ or bare metal | |
+| Speaks standard **CCSDS telemetry**; [integrates](docs/INTEGRATION.md) with NASA cFS, F′ or bare metal; one-file C, Python and browser builds | |
 
 The honest, detailed list is [`docs/OPEN-PROBLEMS.md`](docs/OPEN-PROBLEMS.md).
 The proof behind every ✅ is in [`docs/ASSURANCE.md`](docs/ASSURANCE.md),
@@ -130,14 +174,19 @@ one row per claim, each with the command that reproduces it.
 
 | Folder | What it is |
 |---|---|
+| [`docs/QUICKSTART.md`](docs/QUICKSTART.md) | ★ **Start here**: browser, Python, command line, C, flight, in 5 minutes |
+| [`dist/`](dist/) | The **single-file library**: `starboard.c` + `starboard.h`, drop into any project |
+| [`python/`](python/) | The **Python package** (`import starboard`) and `starboard` command |
 | [`docs/DESIGN.md`](docs/DESIGN.md) | ★ **The specification**: the rules, four theorems, every constant |
+| [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | **Wiring it in**: the four hooks, NASA cFS, F Prime, RTOS, build systems |
 | [`docs/FLIGHT.md`](docs/FLIGHT.md) | **How to put it on a spacecraft**: API, memory, modes, self-test, telemetry |
 | [`ports/c/`](ports/c/) | The **C99 flight library** (`libstarboard.a`), the `sbctl` ground tool, the flock demo |
 | [`core/include/starboard/`](core/include/starboard/) | The **C++17 reference** implementation (header-only) |
 | [`conformance/`](conformance/) | The conformance suite: what "Starboard compatible" means, precisely |
-| [`examples/`](examples/) | The crossing demo, the murmuration demo, sample CDMs |
+| [`examples/`](examples/) | The quickstart, a reference flight loop, the crossing and murmuration demos, sample CDMs |
 | [`verification/`](verification/) | CBMC proofs and fuzzers |
-| [`tools/`](tools/) | The bit-check matrix, cross-architecture and bare-metal campaigns, MISRA |
+| [`site/`](site/) | The website: the film and the in-browser [try page](https://tokeloshe.github.io/starboard-protocol/try.html) (WebAssembly) |
+| [`tools/`](tools/) | The bit-check matrix, cross-architecture and bare-metal campaigns, MISRA, the single-file and WebAssembly builds |
 
 ---
 
@@ -263,9 +312,10 @@ one property that made it worth running. Full argument:
 
 | You are… | Start with |
 |---|---|
-| Curious | this page, then `./build/starboard_crossing_demo` and `ports/c/murmuration` |
+| Curious | this page, then the [browser demo](https://tokeloshe.github.io/starboard-protocol/try.html) |
+| Wanting to use it today | [`docs/QUICKSTART.md`](docs/QUICKSTART.md) |
 | An engineer evaluating the design | [`docs/DESIGN.md`](docs/DESIGN.md), the normative spec |
-| Putting it on a spacecraft | [`docs/FLIGHT.md`](docs/FLIGHT.md) |
+| Putting it on a spacecraft | [`docs/INTEGRATION.md`](docs/INTEGRATION.md), then [`docs/FLIGHT.md`](docs/FLIGHT.md) |
 | Checking the claims | [`docs/ASSURANCE.md`](docs/ASSURANCE.md) and [`docs/evidence/`](docs/evidence/) |
 | Implementing it yourself | [`docs/DESIGN.md`](docs/DESIGN.md) §3–§5, then [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md) |
 | Deciding whether to depend on it | [`docs/OPEN-PROBLEMS.md`](docs/OPEN-PROBLEMS.md) |
@@ -289,7 +339,7 @@ repository"** button uses [`CITATION.cff`](CITATION.cff); machine-readable
 metadata is in [`codemeta.json`](codemeta.json).
 
 > James H (Tokeloshe). *Starboard: an open, deterministic give-way protocol
-> for satellite collision avoidance*, v0.6.0, 2026.
+> for satellite collision avoidance*, v0.7.0, 2026.
 > https://github.com/Tokeloshe/starboard-protocol
 
 **Topics:** space traffic management · satellite collision avoidance ·
