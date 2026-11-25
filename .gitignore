@@ -16,6 +16,7 @@ ports/c/murmuration
 ports/c/test_fsw
 ports/c/test_fsw_fi
 ports/c/test_flock
+ports/c/test_easy
 ports/c/test_softdouble
 ports/c/sb_c_ext.txt
 ports/c/tests/build/
