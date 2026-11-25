@@ -85,7 +85,7 @@ jobs:
       - name: toolchain
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q clang lld wasi-libc
+          sudo apt-get install -y -q clang lld wasi-libc libclang-rt-18-dev-wasm32
       - name: native reference
         run: |
           gcc -std=c99 -O2 -ffp-contract=off -Idist ports/wasm/native_check.c \

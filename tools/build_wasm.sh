@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Builds site/starboard.wasm: the Starboard flight library (dist/starboard.c)
 # plus the browser shim, for the zero-install page site/try.html.
-# Needs clang, wasm-ld and wasi-libc (Ubuntu: apt install clang lld wasi-libc).
+# Needs clang, wasm-ld, wasi-libc and the wasm32 compiler runtime
+# (Ubuntu 24.04: apt install clang lld wasi-libc libclang-rt-18-dev-wasm32).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tools/amalgamate.py >/dev/null
